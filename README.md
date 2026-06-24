@@ -5,7 +5,7 @@
 [![!pypi](https://img.shields.io/pypi/v/sparse-kappa?color=indigo)](https://pypi.org/project/sparse-kappa/)
 [![License: MIT](https://anaconda.org/conda-forge/classixclustering/badges/license.svg)]([https://github.com/nla-group/classix/blob/master/LICENSE](https://opensource.org/licenses/MIT))
 
-**Condition Number Estimation on GPUs for Sparse Matrices**
+**Condition Number Estimation on CPUs/GPUs for Sparse Matrices**
 
 
 
