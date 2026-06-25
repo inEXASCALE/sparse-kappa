@@ -274,10 +274,13 @@ Contributions welcome! Please submit issues and pull requests on GitHub.
 If you use this library in your research, please cite:
 
 ```bibtex
-@software{sparse_kappa,
-  title={Estimating Condition Numbers with Graph Neural Networks},
-  author={Erin Carson, Xinye Chen},
-  year={2026},
-  url={https://github.com/chenxinye/sparse_kappa}
+@misc{carson2026estimatingconditionnumbergraph,
+      title={Estimating condition number with Graph Neural Networks}, 
+      author={Erin Carson and Xinye Chen},
+      year={2026},
+      eprint={2603.10277},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2603.10277}, 
 }
 ```
