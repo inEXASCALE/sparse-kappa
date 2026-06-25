@@ -275,8 +275,8 @@ If you use this library in your research, please cite:
 
 ```bibtex
 @software{sparse_kappa,
-  title={Sparse Matrices Condition Number Estimation on GPUs},
-  author={Xinye Chen},
+  title={Estimating Condition Numbers with Graph Neural Networks},
+  author={Erin Carson, Xinye Chen},
   year={2026},
   url={https://github.com/chenxinye/sparse_kappa}
 }
