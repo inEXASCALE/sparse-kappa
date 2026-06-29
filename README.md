@@ -3,7 +3,7 @@
 # sparse-kappa
 
 [![!pypi](https://img.shields.io/pypi/v/sparse-kappa?color=indigo)](https://pypi.org/project/sparse-kappa/)
-[![License: MIT](https://anaconda.org/conda-forge/sparse-kappaclustering/badges/license.svg)]([https://github.com/nla-group/sparse-kappa/blob/master/LICENSE](https://opensource.org/licenses/MIT))
+[![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](https://opensource.org/licenses/MIT)
 [![Documentation Status](https://readthedocs.org/projects/sparse-kappa/badge/?version=latest)](https://sparse-kappa.readthedocs.io/en/latest/)
 
 
