@@ -4,8 +4,8 @@ import sys
 sys.path.insert(0, os.path.abspath('../..'))
 
 project = 'sparse-kappa'
-author = 'Xinye Chen'
-copyright = '2026, Xinye Chen'
+author = 'Erin Carson, Xinye Chen'
+copyright = '2026, Erin Carson, Xinye Chen'
 release = '0.0.2'
 
 extensions = [
