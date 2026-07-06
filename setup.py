@@ -6,8 +6,8 @@ with open("README.md", "r", encoding="utf-8") as fh:
 setup(
     name="sparse-kappa",                    
     version="0.0.1",
-    author="Xinye Chen",
-    author_email="xinyechenai@gmail.com",
+    author="Erin Carson and Xinye Chen",
+    author_email="carson@karlin.mff.cuni.cz; xinyechenai@gmail.com",
     description="PyTorch-accelerated sparse matrix condition number estimation",
     long_description=long_description,
     long_description_content_type="text/markdown",
