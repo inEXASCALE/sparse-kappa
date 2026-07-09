@@ -14,8 +14,8 @@
 
 </div>
 
-
-``sparse-kappa`` is a GPU-accelerated library for estimating condition numbers of sparse matrices using PyTorch. It supports a variaty of estimation method associated with linear solvers. ``sparse-kappa`` is designed for benchmarking condition number estimator and practical use in science and engineering community.  
+Calculating matrix conditiion  nuumber gives a bound on how inaccurate the solution x to linear system Ax = b will be after approximation, which plays a important role in mixed-precision computing.
+``sparse-kappa`` is a CPU/GPU-accelerated library for estimating condition numbers of sparse matrices using PyTorch. It supports a variaty of estimation method associated with linear solvers. ``sparse-kappa`` is designed for benchmarking condition number estimator and practical use in science and engineering community.  
 
 
 ## Features
