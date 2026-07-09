@@ -5,14 +5,16 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="sparse-kappa",                    
-    version="0.0.1",
+    version="0.0.4",
     author="Erin Carson and Xinye Chen",
     author_email="carson@karlin.mff.cuni.cz; xinyechenai@gmail.com",
     description="PyTorch-accelerated sparse matrix condition number estimation",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/chenxinye/sparse-kappa",
-    
+    url="https://github.com/inEXASCALE/sparse-kappa",
+    project_urls={
+        "Bug Tracker": "https://github.com/inEXASCALE/sparse-kappa/issues",
+    },
     packages=find_packages(include=["sparse_kappa", "sparse_kappa.*"]),
     package_dir={"": "."},
     

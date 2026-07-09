@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sparse-kappa"
-version = "0.0.2"
+version = "0.0.4"
 description = "PyTorch-accelerated sparse matrix condition number estimation"
 readme = "README.md"
 authors = [

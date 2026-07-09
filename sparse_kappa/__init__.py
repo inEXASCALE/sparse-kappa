@@ -16,7 +16,7 @@ from .gnn import (
     train_gnn_strategy_estimator,
 )
 
-__version__ = "0.0.2"
+__version__ = "0.0.4"
 __all__ = [
     "cond_estimate",
     "ConditionNumberEstimator",
