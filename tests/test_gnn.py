@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-import torch
+import pytest
 
 from sparse_kappa.backend import torch_api as cp
 from sparse_kappa.backend import sparse as sp
@@ -11,7 +11,9 @@ from sparse_kappa.gnn import (
     GNNConditionEstimator,
     MatrixConditionDataset,
     TrainingConfig,
+    make_gnn_strategy_config,
     train_gnn_condition_estimator,
+    train_gnn_strategy_estimator,
 )
 
 
@@ -23,6 +25,15 @@ def _toy_samples():
         {"matrix": A1, "condition_number": 4.0, "norm_Ainv": 1.0},
         {"matrix": A2, "condition_number": 9.0, "norm_Ainv": 1.0},
         {"matrix": A3, "condition_number": 4.0, "norm_Ainv": 0.5},
+    ]
+
+
+def _strategy_samples():
+    A1 = sp.diags(cp.array([1.0, 2.0, 4.0]), format="csr")
+    A2 = sp.diags(cp.array([1.0, 3.0, 9.0]), format="csr")
+    return [
+        {"matrix": A1, "condition_number": 4.0, "norm_A": 4.0},
+        {"matrix": A2, "condition_number": 9.0, "norm_A": 9.0},
     ]
 
 
@@ -59,3 +70,45 @@ def test_inverse_norm_mode_reports_condition_components():
     assert result["condition_number"] > 0
     assert result["norm_A"] == 5.0
     assert result["norm_Ainv"] > 0
+
+
+@pytest.mark.parametrize(
+    ("norm", "strategy", "target"),
+    [(1, 1, "inverse_norm"), (2, 1, "inverse_norm"), (1, 2, "condition"), (2, 2, "condition")],
+)
+def test_strategy_config_maps_norm_strategy_pairs(norm, strategy, target):
+    config = make_gnn_strategy_config(norm=norm, strategy=strategy, epochs=1, scheduler="none")
+
+    assert config.norm == norm
+    assert config.strategy == strategy
+    assert config.target == target
+    assert config.log_base == 10.0
+
+
+def test_strategy1_derives_inverse_norm_target_from_condition_and_matrix_norm():
+    config = make_gnn_strategy_config(norm=1, strategy=1, epochs=1, scheduler="none")
+    estimator = GNNConditionEstimator(config=config)
+    dataset = MatrixConditionDataset(_strategy_samples())
+    sample = dataset[0]
+
+    assert estimator._target_value_from_sample(sample, dataset) == pytest.approx(1.0)
+
+
+def test_strategy2_uses_direct_condition_target():
+    config = make_gnn_strategy_config(norm=2, strategy=2, epochs=1, scheduler="none")
+    estimator = GNNConditionEstimator(config=config)
+    dataset = MatrixConditionDataset(_strategy_samples())
+    sample = dataset[1]
+
+    assert estimator._target_value_from_sample(sample, dataset) == pytest.approx(9.0)
+
+
+def test_train_strategy_helper_predicts_labeled_quantity():
+    config = make_gnn_strategy_config(norm=2, strategy=1, epochs=1, lr=1e-3, scheduler="none")
+    estimator = train_gnn_strategy_estimator(_strategy_samples(), norm=2, strategy=1, config=config)
+    result = estimator.predict(sp.diags(cp.array([1.0, 2.0, 5.0]), format="csr"), return_dict=True)
+
+    assert result["condition_number"] > 0
+    assert result["target"] == "inverse_norm"
+    assert result["strategy"] == 1
+    assert result["predicted_quantity"] == "norm_Ainv"

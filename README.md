@@ -109,44 +109,51 @@ All 1-norm methods support flexible solver selection:
 ## GNN-Based Prediction
 
 The `sparse_kappa.gnn` module learns a mapping from sparse matrices to
-condition-number related scalars. It supports two training targets:
+condition-number related scalars. It supports two explicit strategy workflows
+for both 1-norm and 2-norm condition numbers:
 
-- `target="condition"`: predict `kappa(A)` directly.
-- `target="inverse_norm"`: predict `||A^{-1}||`, then compute `||A|| * ||A^{-1}||` at inference time.
+- `strategy=1`: train on `log10(||A^{-1}||)` and compute `kappa(A) = ||A|| * ||A^{-1}||` at prediction time.
+- `strategy=2`: train on `log10(kappa(A))` and predict the condition number directly.
+
+The lower-level target API is still available: `target="condition"` predicts
+`kappa(A)` directly, while `target="inverse_norm"` predicts `||A^{-1}||` and
+multiplies by `||A||` at inference time.
 
 The default graph builder turns a sparse matrix into a row/column bipartite
 graph. You can replace the feature extractor, model, optimizer, scheduler,
 loss function, and validation callback.
 
 ```python
-from sparse_kappa import TrainingConfig, train_gnn_condition_estimator
+from sparse_kappa import make_gnn_strategy_config, train_gnn_strategy_estimator
 from sparse_kappa.gnn import GNNConditionEstimator
 from sparse_kappa.backend import sparse as sp
 
 train_samples = [
-    {"matrix": A0, "condition_number": 12.3, "norm_Ainv": 0.42},
-    {"matrix": A1, "condition_number": 18.9, "norm_Ainv": 0.61},
+    {"matrix": A0, "condition_number": 12.3, "norm_A": 4.1},
+    {"matrix": A1, "condition_number": 18.9, "norm_A": 5.7},
 ]
 
-# Scheme 1: direct condition-number prediction
-config = TrainingConfig(target="condition", norm=2, epochs=100, lr=1e-3)
-estimator = train_gnn_condition_estimator(
+# Strategy 1: inverse-norm prediction. If norm_A is not supplied, sparse-kappa
+# computes ||A|| for the configured norm and derives ||A^{-1}|| = kappa(A) / ||A||.
+config = make_gnn_strategy_config(norm=1, strategy=1, epochs=100, lr=1e-3)
+estimator = train_gnn_strategy_estimator(
     train_samples,
+    norm=1,
+    strategy=1,
     val_data=None,
     config=config,
-    save_path="models/gnn_cond.pt",
+    save_path="models/gnn_strategy1_norm1.pt",
 )
 
 # Load and predict one matrix or a list of matrices.
-estimator = GNNConditionEstimator.load("models/gnn_cond.pt")
-pred = estimator.predict(sp.random(100, 100, density=0.02, format="csr"))
-
-# Scheme 2: inverse-norm prediction. At inference, sparse-kappa computes ||A||
-# for the requested norm and returns ||A|| * predicted ||A^{-1}||.
-inv_config = TrainingConfig(target="inverse_norm", norm=1, epochs=100)
-inv_estimator = train_gnn_condition_estimator(train_samples, config=inv_config)
-result = inv_estimator.predict(A_test, return_dict=True)
+estimator = GNNConditionEstimator.load("models/gnn_strategy1_norm1.pt")
+result = estimator.predict(sp.random(100, 100, density=0.02, format="csr"), return_dict=True)
 print(result["condition_number"], result["norm_A"], result["norm_Ainv"])
+
+# Strategy 2: direct condition-number prediction.
+direct_config = make_gnn_strategy_config(norm=2, strategy=2, epochs=100)
+direct_estimator = train_gnn_strategy_estimator(train_samples, norm=2, strategy=2, config=direct_config)
+pred = direct_estimator.predict(A_test)
 ```
 
 Customization hooks follow the same shape:

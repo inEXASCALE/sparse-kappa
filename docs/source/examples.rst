@@ -38,18 +38,36 @@ Compare multiple methods
    print(result['condition_number'])
    print(result['solver_info'])
 
-GNN training workflow
----------------------
+GNN strategy 1: inverse-norm prediction
+---------------------------------------
 
 .. code-block:: python
 
-   from sparse_kappa import TrainingConfig, train_gnn_condition_estimator
+   from sparse_kappa import make_gnn_strategy_config, train_gnn_strategy_estimator
 
    train_samples = [
-       {'matrix': A, 'condition_number': 10.2, 'norm_Ainv': 0.4},
+       {'matrix': A0, 'condition_number': 10.2, 'norm_A': 2.5},
+       {'matrix': A1, 'condition_number': 15.8, 'norm_A': 3.1},
    ]
 
-   config = TrainingConfig(target='condition', norm=2, epochs=20, lr=1e-3)
-   estimator = train_gnn_condition_estimator(train_samples, config=config)
-   pred = estimator.predict(A)
+   config = make_gnn_strategy_config(norm=1, strategy=1, epochs=20, lr=1e-3)
+   estimator = train_gnn_strategy_estimator(train_samples, norm=1, strategy=1, config=config)
+   result = estimator.predict(A_test, return_dict=True)
+   print(result['condition_number'], result['norm_A'], result['norm_Ainv'])
+
+GNN strategy 2: direct condition prediction
+-------------------------------------------
+
+.. code-block:: python
+
+   from sparse_kappa import make_gnn_strategy_config, train_gnn_strategy_estimator
+
+   train_samples = [
+       {'matrix': A0, 'condition_number': 10.2},
+       {'matrix': A1, 'condition_number': 15.8},
+   ]
+
+   config = make_gnn_strategy_config(norm=2, strategy=2, epochs=20, lr=1e-3)
+   estimator = train_gnn_strategy_estimator(train_samples, norm=2, strategy=2, config=config)
+   pred = estimator.predict(A_test)
    print(pred)
