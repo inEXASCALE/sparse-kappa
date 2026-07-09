@@ -8,7 +8,7 @@ setup(
     version="0.0.4",
     author="Erin Carson and Xinye Chen",
     author_email="carson@karlin.mff.cuni.cz; xinyechenai@gmail.com",
-    description="PyTorch-accelerated sparse matrix condition number estimation",
+    description="Algorithms for sparse matrix condition number estimation",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/inEXASCALE/sparse-kappa",
