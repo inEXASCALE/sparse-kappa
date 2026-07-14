@@ -6,7 +6,7 @@
 [![!pypi](https://img.shields.io/pypi/v/sparse-kappa?color=indigo)](https://pypi.org/project/sparse-kappa/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](https://opensource.org/licenses/MIT)
 [![Documentation Status](https://readthedocs.org/projects/sparse-kappa/badge/?version=latest)](https://sparse-kappa.readthedocs.io/en/latest/)
-[![Download Status](https://img.shields.io/pypi/dm/sparse-kappa.svg?label=PyPI%20downloads)](https://pypi.org/project/sparse-kappa)
+[![Downloads](https://static.pepy.tech/badge/sparse-kappa)](https://pepy.tech/project/sparse-kappa)
 
 **Condition Number Estimation on CPUs/GPUs for Sparse Matrices**
 
