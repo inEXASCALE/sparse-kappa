@@ -41,7 +41,7 @@ pip install sparse-kappa
 ```
 
 ```bash
-git clone https://github.com/chenxinye/sparse-kappa
+git clone https://github.com/inEXASCALE/sparse-kappa.git
 pip install torch
 pip install -e .
 ```
