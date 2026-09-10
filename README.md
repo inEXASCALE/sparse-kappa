@@ -2,9 +2,9 @@
 
 # sparse-kappa
 
-[![Coverage](https://github.com/inEXASCALE/sparse-kappa/actions/workflows/test.yml/badge.svg)](https://github.com/inEXASCALE/sparse-kappa/actions/workflows/test.yml)
-[![!pypi](https://img.shields.io/pypi/v/sparse-kappa?color=tomato)](https://pypi.org/project/sparse-kappa/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](https://opensource.org/licenses/MIT)
+[![!pypi](https://img.shields.io/pypi/v/sparse-kappa?color=tomato)](https://pypi.org/project/sparse-kappa/)
+[![Coverage](https://github.com/inEXASCALE/sparse-kappa/actions/workflows/test.yml/badge.svg)](https://github.com/inEXASCALE/sparse-kappa/actions/workflows/test.yml)
 [![Documentation Status](https://readthedocs.org/projects/sparse-kappa/badge/?version=latest)](https://sparse-kappa.readthedocs.io/en/latest/)
 [![Downloads](https://static.pepy.tech/badge/sparse-kappa)](https://pepy.tech/project/sparse-kappa)
 
