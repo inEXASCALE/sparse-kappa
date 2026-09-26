@@ -7,6 +7,7 @@ from sparse_kappa.backend import sparse as sp
 from sparse_kappa.backend.sparse import linalg as splinalg
 from typing import Union, Dict, Any
 import warnings
+import torch
 
 
 def validate_matrix(A: Union[sp.spmatrix, cp.ndarray]) -> sp.spmatrix:
@@ -36,6 +37,12 @@ def validate_matrix(A: Union[sp.spmatrix, cp.ndarray]) -> sp.spmatrix:
     if A.shape[0] != A.shape[1]:
         raise ValueError(f"Matrix must be square, got shape {A.shape}")
     
+    if A.shape[0] == 0:
+        raise ValueError("Matrix must be nonempty")
+    if not torch.isfinite(A.data).all():
+        raise ValueError("Matrix entries must be finite")
+    if not (A.dtype.is_floating_point or A.dtype.is_complex):
+        A = A.astype(cp.float64)
     return A
 
 

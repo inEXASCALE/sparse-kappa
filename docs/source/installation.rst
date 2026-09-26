@@ -1,180 +1,69 @@
 Installation
 ============
 
-This guide covers installation of Sparse Kappa and its dependencies.
+The runtime requires Python 3.8 or newer, NumPy, and PyTorch 2.0 or newer.
+A GPU is optional. Dependency resolution selects versions compatible with your
+Python version; documentation tools have their own requirements.
 
-Prerequisites
--------------
-
-Required
-~~~~~~~~
-
-* Python 3.8 or later
-* NVIDIA GPU with compute capability 6.0 or higher
-* CUDA Toolkit 11.0 or later (11.x or 12.x)
-
-Recommended
-~~~~~~~~~~~
-
-* conda or virtualenv for environment management
-* 8GB+ GPU memory for large matrices
-
-Check Your System
------------------
-
-CUDA Version
-~~~~~~~~~~~~
-
-Check your CUDA version:
-
-.. code-block:: bash
-
-   nvcc --version
-
-If you don't have CUDA installed, download it from `NVIDIA's website <https://developer.nvidia.com/cuda-toolkit>`_.
-
-GPU Information
-~~~~~~~~~~~~~~~
-
-Check your GPU:
-
-.. code-block:: bash
-
-   nvidia-smi
-
-Installing PyTorch
-------------------
-
-PyTorch is the main dependency. Install the version matching your CUDA:
-
-For CUDA 11.x
-~~~~~~~~~~~~~
-
-.. code-block:: bash
-
-   pip install torch
-
-For CUDA 12.x
-~~~~~~~~~~~~~
-
-.. code-block:: bash
-
-   pip install torch
-
-Verify Installation
-~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: python
-
-   from sparse_kappa.backend import torch_api as cp
-   print(f"PyTorch version: {cp.__version__}")
-   print(f"CUDA version: {cp.cuda.runtime.runtimeGetVersion()}")
-   
-   # Test GPU
-   x = cp.array([1, 2, 3])
-   print(f"GPU test: {cp.sum(x)}")
-
-Installing Sparse Kappa
------------------------
-
-From Source (Recommended)
-~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: bash
-
-   git clone https://github.com/inEXASCALE/sparse-kappa.git
-   cd sparse-kappa
-   pip install -e .
-
-This installs in editable mode for development.
-
-From PyPI (Coming Soon)
-~~~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: bash
-
-   pip install sparse-kappa
-
-Development Installation
-~~~~~~~~~~~~~~~~~~~~~~~~
-
-For development with testing tools:
-
-.. code-block:: bash
-
-   git clone https://github.com/inEXASCALE/sparse-kappa.git
-   cd sparse-kappa
-   pip install -e ".[dev]"
-
-This installs additional packages:
-
-* pytest - for running tests
-* pytest-cov - for coverage reports
-* black - for code formatting
-* flake8 - for linting
-
-Verify Installation
+Install the package
 -------------------
 
-.. code-block:: python
+.. code-block:: bash
 
-   from sparse_kappa import cond_estimate
-   from sparse_kappa.backend import sparse as sp
-   
-   # Create test matrix
-   A = sp.random(100, 100, density=0.1, format='csr')
-   
-   # Estimate condition number
-   cond = cond_estimate(A)
-   print(f"Condition number: {cond:.2e}")
-   
-   # Check version
-   import sparse_kappa
-   print(f"Sparse Kappa version: {sparse_kappa.__version__}")
+   python -m pip install sparse-kappa
 
-Common Issues
--------------
+Install this checkout in an isolated environment
+------------------------------------------------
 
-Issue: "No module named 'PyTorch'"
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-**Solution**: Install PyTorch matching your CUDA version
+From the repository root:
 
 .. code-block:: bash
 
-   pip install torch
+   python -m venv .venv
+   source .venv/bin/activate
+   python -m pip install -e .
 
-Issue: "CUDA driver version is insufficient"
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+On Windows, activate with ``.venv\Scripts\activate``. Editable installation
+ensures Python imports the checkout you are changing. Run scripts using the same
+interpreter used to install the package.
 
-**Solution**: Update your NVIDIA driver
+Development and documentation dependencies
+------------------------------------------
 
-1. Check required driver version for your CUDA
-2. Download from `NVIDIA Driver Downloads <https://www.nvidia.com/Download/index.aspx>`_
-3. Install and reboot
+.. code-block:: bash
 
-Issue: ImportError with cuSOLVER
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+   python -m pip install -e ".[dev,docs]"
+   python -m pytest tests -q
+   python -m sphinx -W --keep-going -b html docs/source /tmp/sparse-kappa-docs
 
-**Solution**: This is expected - the library handles this gracefully and falls back to alternative methods.
+SciPy is optional for users; it is included in the development extra because
+some tests/benchmarks use it. Sphinx, Furo, and MyST are documentation tools and
+are not required for numerical estimation or GNN prediction.
 
-Issue: Out of memory
-~~~~~~~~~~~~~~~~~~~~
-
-**Solution**: 
-
-* Use iterative solvers instead of LU
-* Reduce matrix size for testing
-* Use methods with lower memory footprint
+Verify the installation
+-----------------------
 
 .. code-block:: python
 
-   # Instead of LU
-   cond_estimate(A, norm=1, method='hager-higham', solver='lsmr')
+   import numpy as np
+   import torch
+   import sparse_kappa
+   from sparse_kappa import cond_estimate
 
-Next Steps
-----------
+   print("sparse-kappa:", sparse_kappa.__version__)
+   print("PyTorch:", torch.__version__)
+   print("CUDA available:", torch.cuda.is_available())
+   print("kappa_2 (expected 10):", cond_estimate(np.diag([1., 2., 10.])))
 
-* :doc:`quickstart` - Learn basic usage
-* :doc:`user_guide` - Comprehensive guide
-* :doc:`examples` - Code examples
+CPU and CUDA
+------------
+
+Backend constructors choose CUDA when available and CPU otherwise. Existing
+PyTorch tensors retain their device; keep all tensors in an operation on the
+same device. For GNN workflows, ``TrainingConfig(device="cpu")`` and
+``TrainingConfig(device="cuda")`` explicitly select execution. Start on CPU
+with the examples in :doc:`quickstart`, then validate the CUDA environment for
+your machine. Installing a CUDA wheel on a runner does not provide a GPU.
+
+Read :doc:`performance` before processing large matrices: current numerical
+backend inputs are converted to dense storage.

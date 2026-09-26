@@ -1,387 +1,127 @@
-User Guide
-==========
+Using sparse-kappa
+==================
 
-This guide provides detailed information about using sparse-kappa effectively.
+Choose a numerical estimator when you need an estimate for a matrix now.
+Choose a trained GNN when you have representative labels and have validated
+prediction accuracy on the matrix distribution you intend to use.
 
-Understanding Condition Numbers
---------------------------------
+What the condition number means
+-------------------------------
 
-What is a Condition Number?
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+For a nonsingular square matrix A,
 
-The condition number of a matrix :math:`A` measures how sensitive the solution of the linear system :math:`Ax = b` is to perturbations in :math:`A` or :math:`b`.
+.. math::
 
-For an :math:`n \times n` matrix :math:`A`:
+   \kappa_1(A)=\lVert A\rVert_1\lVert A^{-1}\rVert_1,
+   \qquad
+   \kappa_2(A)=\frac{\sigma_{\max}(A)}{\sigma_{\min}(A)}.
 
-* **2-norm condition number**: :math:`\kappa_2(A) = \|A\|_2 \cdot \|A^{-1}\|_2 = \frac{\sigma_{\max}}{\sigma_{\min}}`
-* **1-norm condition number**: :math:`\kappa_1(A) = \|A\|_1 \cdot \|A^{-1}\|_1`
+The 1-norm is the maximum absolute column sum. The 2-norm is the largest
+singular value. A condition number near one indicates low normwise sensitivity;
+a large value indicates potentially amplified perturbations in a linear system.
+It does not measure actual solver error, and universal cutoffs for acceptable
+conditioning depend on precision and the application.
 
-where :math:`\sigma_{\max}` and :math:`\sigma_{\min}` are the largest and smallest singular values of :math:`A`.
+A singular matrix has infinite condition number. Very small singular values
+may be indistinguishable from zero at the chosen precision. Learned predictions
+are not singularity tests and may even produce values below the mathematical
+lower bound of one; outputs are not clamped to hide model error.
 
-**Interpretation:**
+Construct a matrix and choose a norm
+------------------------------------
 
-* :math:`\kappa(A) = 1`: Perfectly conditioned (e.g., identity matrix)
-* :math:`\kappa(A) < 100`: Well-conditioned
-* :math:`100 < \kappa(A) < 10^4`: Moderately conditioned
-* :math:`\kappa(A) > 10^4`: Ill-conditioned
-* :math:`\kappa(A) = \infty`: Singular matrix
-
-Why Estimate Condition Numbers?
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-1. **Assessing numerical stability**: High condition numbers indicate that numerical solutions may be unreliable
-2. **Choosing solvers**: Different solvers work better for different condition numbers
-3. **Preconditioning**: Helps design effective preconditioners
-4. **Matrix analysis**: Understand the properties of your linear system
-
-Choosing Methods
-----------------
-
-Automatic Selection
-^^^^^^^^^^^^^^^^^^^
-
-The ``method='auto'`` option automatically selects the best method based on matrix properties:
+Each example block is self-contained.
 
 .. code-block:: python
 
-   cond = cond_estimate(A, method='auto')
+   import numpy as np
+   from sparse_kappa import cond_estimate
 
-Selection criteria:
+   A = np.array([[3., -1., 0.], [-1., 3., -1.], [0., -1., 3.]])
+   kappa_1 = cond_estimate(A, norm=1, solver="lu")
+   kappa_2 = cond_estimate(A, norm=2)
+   print("kappa_1:", kappa_1, "reference:", np.linalg.cond(A, p=1))
+   print("kappa_2:", kappa_2, "reference:", np.linalg.cond(A, p=2))
 
-* **Small matrices** (n < 5000): Use ``svds`` (most accurate)
-* **Symmetric matrices**: Use ``eigsh``
-* **Very sparse matrices** (density < 1%): Use ``golub-kahan``
-* **Default**: Use ``lanczos``
+The numerical API accepts nonempty square matrices with finite entries.
+NumPy arrays, Python matrix lists, dense PyTorch tensors, native PyTorch COO/CSR
+and SciPy sparse matrices are converted to the current backend representation.
+Integer matrices are promoted to float64. Complex matrices are accepted by the
+numerical API; GNN features currently support real matrices only. Use float64
+for sensitive reference experiments and keep tensors on a consistent device.
 
-1-Norm Methods
-^^^^^^^^^^^^^^
+Methods and solvers
+-------------------
 
-Hager-Higham Algorithm
-""""""""""""""""""""""
+``method="auto"`` selects Hager-Higham for norm 1. For norm 2, the current
+selection uses ``svds`` below size 5000, ``eigsh`` for larger matrices classified
+as symmetric, ``golub-kahan`` when density is below 0.01, and otherwise
+``lanczos``. These are heuristics, not accuracy or memory guarantees. The public
+``eigsh`` option currently routes through ``lanczos_unsym`` on A^H A.
 
-The only method for 1-norm estimation:
+For norm 1, ``solver`` selects how inverse actions are computed. ``lu`` reuses a
+factorization within the estimator invocation. Use ``cg`` only for matrices
+satisfying its mathematical assumptions, and compare results with ``lu`` on
+small test problems. The current backend compatibility implementations of
+``lsmr``, ``lsqr``, ``cg``, ``gmres``, and ``bicgstab`` call dense solves rather
+than implementing the named sparse iterations. See :doc:`performance`.
 
-.. code-block:: python
-
-   result = cond_estimate(A, norm=1, method='hager-higham')
-
-**Characteristics:**
-
-* Fast iterative algorithm
-* Typically converges in 3-5 iterations
-* Based on power iteration for :math:`\|A^{-1}\|_1`
-* Memory efficient
-
-**When to use:**
-
-* When you specifically need 1-norm condition numbers
-* For sparse matrices where computing :math:`\|A\|_1` is cheap
-
-2-Norm Methods
-^^^^^^^^^^^^^^
-
-Power Method
-""""""""""""
-
-Simple power iteration for extreme singular values:
+Diagnostics and method comparison
+---------------------------------
 
 .. code-block:: python
 
-   cond = cond_estimate(A, norm=2, method='power', max_iter=100)
+   import numpy as np
+   from sparse_kappa import cond_estimate
 
-**Characteristics:**
+   A = np.diag([1., 2., 5., 10.])
+   for method in ("svds", "power", "lanczos", "golub-kahan"):
+       result = cond_estimate(A, norm=2, method=method, max_iter=100,
+                              tol=1e-8, return_dict=True)
+       print(method, result["condition_number"], result.get("converged"))
 
-* Simple and robust
-* Linear convergence
-* Good for quick rough estimates
+``cond_estimate`` normally returns a float. ``return_dict=True`` or
+``verbose=True`` returns a dictionary. ``ConditionNumberEstimator.estimate()``
+always returns a dictionary. Common metadata includes ``method``, ``norm``,
+``condition_number``, ``iterations``, and ``converged``, with details varying by
+method. A reported convergence flag is the algorithm's stopping result, not a
+certificate of condition-number accuracy. Dense backend wrappers can report
+iteration metadata even though the actual operation was a dense decomposition.
 
-**When to use:**
+Randomized estimators may vary between runs. Seed ``torch`` and the backend RNG
+when comparing them, repeat experiments when accuracy matters, and use a small
+dense reference. Increasing iterations only helps methods that actually use
+those controls. A 1-norm inverse-norm estimate is typically a lower estimate,
+so a small result alone should not establish that a matrix is safe to solve.
 
-* Quick estimates without high accuracy requirements
-* As a fallback when other methods fail
-
-Lanczos Method
-""""""""""""""
-
-Uses Lanczos tridiagonalization:
-
-.. code-block:: python
-
-   cond = cond_estimate(A, norm=2, method='lanczos', num_eigenvalues=10)
-
-**Characteristics:**
-
-* Fast convergence for well-separated eigenvalues
-* Works on :math:`A^T A` (symmetric)
-* Good balance of speed and accuracy
-
-**When to use:**
-
-* Medium-sized matrices (1k-10k)
-* When you need good accuracy
-* General purpose method
-
-Arnoldi Method
-""""""""""""""
-
-Generalization of Lanczos for non-symmetric matrices:
+Singular and nearly singular matrices
+-------------------------------------
 
 .. code-block:: python
 
-   cond = cond_estimate(A, norm=2, method='arnoldi', restart=20)
-
-**Characteristics:**
-
-* More general than Lanczos
-* Higher memory requirements
-* Handles non-symmetric matrices well
-
-**When to use:**
-
-* Non-symmetric matrices
-* When Lanczos fails to converge
-
-Golub-Kahan Bidiagonalization
-""""""""""""""""""""""""""""""
-
-Directly computes singular values via bidiagonalization:
-
-.. code-block:: python
-
-   cond = cond_estimate(A, norm=2, method='golub-kahan', num_values=6)
-
-**Characteristics:**
-
-* More numerically stable than forming :math:`A^T A`
-* Direct SVD-based approach
-* Good for ill-conditioned matrices
-
-**When to use:**
-
-* Large sparse matrices
-* Ill-conditioned problems
-* When numerical stability is critical
-
-PyTorch Wrapper Methods
-^^^^^^^^^^^^^^^^^^^^^^^
-
-SVDS
-""""
-
-Uses PyTorch's sparse SVD:
-
-.. code-block:: python
-
-   cond = cond_estimate(A, norm=2, method='svds', num_values=10)
-
-**Characteristics:**
-
-* Most accurate method
-* Uses optimized PyTorch implementation
-* Computes actual singular values
-
-**When to use:**
-
-* Small to medium matrices (< 10k)
-* When you need high accuracy
-* As a reference for validating other methods
-
-EIGSH
-"""""
-
-Uses PyTorch's symmetric eigenvalue solver:
-
-.. code-block:: python
-
-   cond = cond_estimate(A, norm=2, method='eigsh', num_values=6)
-
-**Characteristics:**
-
-* Optimized for symmetric matrices
-* Fast and accurate
-* Requires symmetric input
-
-**When to use:**
-
-* Symmetric or Hermitian matrices
-* Symmetric positive definite problems
-
-LOBPCG
-""""""
-
-Locally Optimal Block Preconditioned Conjugate Gradient:
-
-.. code-block:: python
-
-   cond = cond_estimate(A, norm=2, method='lobpcg', num_values=2)
-
-**Characteristics:**
-
-* Efficient for a few extreme eigenvalues
-* Can use preconditioners
-* Good for very large matrices
-
-**When to use:**
-
-* Very large matrices (> 50k)
-* When you can provide a good preconditioner
-* Computing only a few eigenvalues
-
-Parameter Tuning
-----------------
-
-Maximum Iterations
-^^^^^^^^^^^^^^^^^^
-
-Control convergence behavior:
-
-.. code-block:: python
-
-   # More iterations for better accuracy
-   cond = cond_estimate(A, max_iter=200, tol=1e-8)
-
-   # Fewer iterations for speed
-   cond = cond_estimate(A, max_iter=20, tol=1e-4)
-
-**Guidelines:**
-
-* Default (100) works for most cases
-* Increase for ill-conditioned matrices
-* Decrease for rough estimates
-
-Tolerance
-^^^^^^^^^
-
-Convergence tolerance:
-
-.. code-block:: python
-
-   cond = cond_estimate(A, tol=1e-6)  # Default
-   cond = cond_estimate(A, tol=1e-8)  # Tighter convergence
-
-**Guidelines:**
-
-* ``1e-6``: Good balance (default)
-* ``1e-8``: High accuracy requirements
-* ``1e-4``: Fast approximate estimates
-
-Number of Values
-^^^^^^^^^^^^^^^^
-
-Number of singular/eigenvalues to compute:
-
-.. code-block:: python
-
-   cond = cond_estimate(A, method='svds', num_values=10)
-
-**Guidelines:**
-
-* More values = better accuracy but slower
-* Default (6) usually sufficient
-* For large gaps between eigenvalues, fewer values may suffice
-
-Best Practices
---------------
-
-Performance Optimization
-^^^^^^^^^^^^^^^^^^^^^^^^
-
-1. **Choose the right method** for your matrix type
-2. **Start with ``auto``** method selection
-3. **Use symmetric methods** (eigsh) when applicable
-4. **Reduce ``num_values``** for faster estimates
-5. **Monitor GPU memory** for very large matrices
-
-Accuracy Considerations
-^^^^^^^^^^^^^^^^^^^^^^^
-
-1. **Validate with ``svds``** on small test cases
-2. **Check convergence** status in results
-3. **Use tight tolerances** for critical applications
-4. **Be aware of numerical precision** limits
-
-Memory Management
-^^^^^^^^^^^^^^^^^
-
-.. code-block:: python
-
-   from sparse_kappa.backend import torch_api as cp
-
-   # Clear GPU memory periodically
-   cp.get_default_memory_pool().free_all_blocks()
-
-   # Check GPU memory usage
-   mempool = cp.get_default_memory_pool()
-   print(f"Used bytes: {mempool.used_bytes()}")
-   print(f"Total bytes: {mempool.total_bytes()}")
-
-Error Handling
-^^^^^^^^^^^^^^
-
-.. code-block:: python
-
-   try:
-       result = cond_estimate(A, norm=2, method='lanczos', verbose=True)
-       if not result['converged']:
-           print("Warning: did not converge")
-   except Exception as e:
-       print(f"Error: {e}")
-       # Fall back to different method
-       result = cond_estimate(A, norm=2, method='power')
-
-Common Pitfalls
----------------
-
-1. **Singular matrices**: Will return ``inf`` or very large numbers
-2. **Memory errors**: Reduce ``num_values`` or use more memory-efficient methods
-3. **Non-convergence**: Increase ``max_iter`` or try different method
-4. **CUDA version mismatch**: Ensure PyTorch matches your CUDA version
-5. **Dense matrices**: Convert to sparse format first for efficiency
-
-Advanced Usage
---------------
-
-Custom Linear Operators
-^^^^^^^^^^^^^^^^^^^^^^^
-
-.. code-block:: python
-
-   from sparse_kappa.backend.sparse.linalg import LinearOperator
-
-   def matvec(v):
-       # Custom matrix-vector product
-       return custom_operation(v)
-
-   A_op = LinearOperator((n, n), matvec=matvec, dtype=cp.float64)
-   # Note: Not all methods support LinearOperators
-
-Batch Processing
-^^^^^^^^^^^^^^^^
-
-.. code-block:: python
-
-   matrices = [sp.random(1000, 1000, density=0.01) for _ in range(10)]
-   
-   results = []
-   for A in matrices:
-       cond = cond_estimate(A, method='golub-kahan')
-       results.append(cond)
-   
-   print(f"Mean condition number: {np.mean(results):.2e}")
-   print(f"Max condition number: {np.max(results):.2e}")
-
-Integration with Other Libraries
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-.. code-block:: python
-
-   import scipy.sparse as scipy_sp
-
-   # Convert from SciPy sparse to PyTorch sparse
-   A_scipy = scipy_sp.random(1000, 1000, density=0.01, format='csr')
-   A_torch = sp.csr_matrix(cp.asarray(A_scipy.toarray()))
-
-   cond = cond_estimate(A_torch)
-
-   # Convert back if needed
-   result_cpu = cp.asnumpy(result['singular_values'])
+   import numpy as np
+   from sparse_kappa import cond_estimate
+
+   for A in (np.diag([1., 0.]), np.diag([1., 1e-8])):
+       print("Estimate:", cond_estimate(A, norm=2, method="svds"))
+       print("Reference:", np.linalg.cond(A))
+
+The SVD example returns infinity for an exact zero singular value and about
+1e8 for the second matrix. Solve-based norm-1 paths can raise on singular LU
+factorization; backend solve fallbacks may use least squares. Do not interpret
+a finite solve-based result as a proof of nonsingularity. Prefer singular-value
+analysis on tractable problems when singularity is suspected.
+
+Learned prediction workflow
+---------------------------
+
+Build accurate finite labels, split training/validation/test data, choose norm
+and strategy, then compare edge modes on the same splits. ``use_edge_features``
+can be True or False; it controls numeric information on edges, while default
+node/global statistics retain values. Save the validated model and use
+``GNNConditionEstimator.load`` to restore its mode. See :doc:`api/gnn` and the
+complete scripts in :doc:`examples`.
+
+Batch numerical estimates are a Python loop over matrices; GNN ``predict``
+also accepts a list and evaluates one graph at a time. Current APIs do not
+promise vectorized batch execution or concurrent mutation safety.

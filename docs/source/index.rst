@@ -32,6 +32,7 @@ covering both numerical algorithms and optional GNN-based prediction workflows.
    :maxdepth: 1
    :caption: Project
 
+   architecture
    contributing
    changelog
 
@@ -39,5 +40,4 @@ Indices and tables
 ==================
 
 * :ref:`genindex`
-* :ref:`modindex`
 * :ref:`search`

@@ -28,7 +28,7 @@ Typical usage
    from sparse_kappa.backend import sparse as sp
    from sparse_kappa import cond_estimate
 
-   A = sp.random(1000, 1000, density=0.01, format='csr')
+   A = sp.csr_matrix([[1., 0., 0.], [0., 2., 0.], [0., 0., 10.]])
 
    cond = cond_estimate(A)  # auto-select 2-norm method
    detailed = cond_estimate(A, norm=2, method='svds', return_dict=True)
@@ -42,7 +42,25 @@ Typical usage
 .. code-block:: python
 
    from sparse_kappa import ConditionNumberEstimator
+   from sparse_kappa.backend import sparse as sp
 
+   A = sp.csr_matrix([[1., 0.], [0., 10.]])
    estimator = ConditionNumberEstimator(A, norm=1, method='hager-higham', solver='lu')
    result = estimator.estimate()
    print(result['method'], result['condition_number'])
+
+Input and output contract
+-------------------------
+
+Input must be a nonempty finite square matrix. NumPy arrays, matrix lists,
+PyTorch dense/COO/CSR tensors, backend matrices, and SciPy sparse matrices are
+converted to the dense current backend. Integer data is promoted to float64.
+``max_iter`` must be a positive integer and ``tol`` finite and nonnegative.
+Invalid dimensions, norms, or methods raise ``ValueError``.
+
+A float is returned unless ``return_dict=True`` or ``verbose=True``. Result
+fields are method-dependent; ``converged`` is not an accuracy certificate.
+``svds`` computes extremal singular values directly, avoiding A^H A in this
+path. Other methods may use normal operators and have different numerical
+behavior. Read :doc:`../user_guide` for singular-matrix behavior and
+:doc:`../performance` for storage and dense solver limits.

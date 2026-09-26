@@ -15,18 +15,23 @@ Available functions
 Method guidance
 ---------------
 
-* ``svds``: highest-accuracy baseline on small/medium matrices.
-* ``eigsh``: symmetric/Hermitian-friendly mode.
-* ``lanczos`` / ``lanczos_unsym``: scalable iterative alternatives.
-* ``golub-kahan``: robust option for large sparse systems.
-* ``power``: simplest low-cost estimate.
+* ``svds``: direct extremal singular-value baseline.
+* ``eigsh``: the public API currently routes through a normal-operator estimate.
+* ``lanczos`` / ``lanczos_unsym``: Lanczos-based interfaces.
+* ``golub-kahan``: projected bidiagonalization estimate.
+* ``power``: power/inverse iteration estimate.
+
+See :doc:`../methods` and :doc:`../performance` for backend behavior and limits.
 
 Example
 -------
 
 .. code-block:: python
 
+   import numpy as np
    from sparse_kappa import cond_estimate
+
+   A = np.diag([1., 2., 10.])
 
    cond = cond_estimate(A, norm=2, method='golub-kahan', max_iter=40)
    print(cond)

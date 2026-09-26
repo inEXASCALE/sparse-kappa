@@ -1,81 +1,58 @@
-name: Coverage
+name: Tests and documentation
 
 on:
   push:
-    branches: [ master, main, develop ]
+    branches: [master, main, develop]
   pull_request:
-    branches: [ master, main, develop ]
+    branches: [master, main, develop]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
-      matrix:
-        python-version: ['3.8', '3.9', '3.10', '3.11']
       fail-fast: false
-
+      matrix:
+        python-version: ['3.8', '3.10', '3.12']
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install CPU runtime and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
+          python -m pip install -e ".[dev]"
+      - name: Run regression tests
+        run: python -m pytest tests -q --cov=sparse_kappa --cov-report=xml --cov-report=term
+      - name: Execute self-contained examples
+        run: |
+          python examples/toy_models.py
+          python examples/api_workflows.py
+          python examples/gnn_edge_features.py --epochs 2
+          python examples/gnn_edge_features.py --epochs 2 --no-edge-features
+          python examples/gnn_edge_features.py --norm 1 --strategy 1 --epochs 2
+      - uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          flags: cpu-tests
+          fail_ci_if_error: false
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential
-
-    - name: Install Python dependencies
-      run: |
-        python -m pip install --upgrade pip
-        python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
-        python -m pip install pytest pytest-cov numpy scipy
-        python -m pip install -e .
-
-    - name: Run tests with coverage
-      run: |
-        pytest tests/ -v --cov=sparse_kappa --cov-report=xml --cov-report=term
-
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v4
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}
-        file: ./coverage.xml
-        flags: unittests
-        name: codecov-umbrella
-        fail_ci_if_error: false
-        verbose: true
-
-  test-gpu:
+  documentation:
     runs-on: ubuntu-latest
-    container:
-      image: nvidia/cuda:11.8.0-cudnn8-devel-ubuntu22.04
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Install Python and dependencies
-      run: |
-        apt-get update
-        apt-get install -y python3 python3-pip git
-        python3 -m pip install --upgrade pip
-        python3 -m pip install --index-url https://download.pytorch.org/whl/cu118 torch
-        python3 -m pip install pytest pytest-cov numpy scipy
-        python3 -m pip install -e .
-
-
-    - name: Upload GPU coverage to Codecov
-      uses: codecov/codecov-action@v4
-      if: success()
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }}
-        file: ./coverage.xml
-        flags: gpu-tests
-        name: codecov-gpu
-        fail_ci_if_error: false
-        verbose: true
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install documentation dependencies
+        run: |
+          python -m pip install --index-url https://download.pytorch.org/whl/cpu torch
+          python -m pip install -e ".[docs]"
+      - name: Build documentation with warnings as errors
+        run: python -m sphinx -W --keep-going -b html docs/source /tmp/sparse-kappa-docs

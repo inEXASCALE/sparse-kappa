@@ -4,7 +4,6 @@ from typing import Dict, Any
 from sparse_kappa.backend import torch_api as cp
 from sparse_kappa.backend import sparse as sp
 from sparse_kappa.backend.sparse import linalg as splinalg
-from sparse_kappa.backend.sparse.linalg import LinearOperator
 
 
 def svds_cond(
@@ -20,7 +19,7 @@ def svds_cond(
     Strategy
     --------
     - sigma_max: via sparse partial SVD (`svds`, largest singular value)
-    - sigma_min: via smallest eigenvalue of A^H A using `eigsh`
+    - sigma_min: via partial SVD (`svds`, smallest singular value)
 
     Notes
     -----
@@ -31,7 +30,7 @@ def svds_cond(
     min_dim = min(m, n)
 
     if verbose:
-        print("Sparse condition estimation via svds + eigsh")
+        print("Condition estimation via extremal singular values")
         print(f"Matrix size: {A.shape}")
 
     if min_dim == 0:
@@ -71,24 +70,13 @@ def svds_cond(
         )
         sigma_max = float(cp.abs(s_large[0]))
 
-        # Smallest singular value from lambda_min(A^H A)
-        def matvec(v):
-            return A.T.conj() @ (A @ v)
-
-        ATA = LinearOperator((n, n), matvec=matvec, dtype=A.dtype)
-
-        eigvals_small = splinalg.eigsh(
-            ATA,
-            k=1,
-            which="SA",
-            maxiter=max_iter,
-            tol=tol,
-            return_eigenvectors=False,
+        # Estimate sigma_min directly: forming A^H A squares the condition
+        # number and can lose the smallest singular value to roundoff.
+        s_small = splinalg.svds(
+            A, k=1, which="SM", return_singular_vectors=False,
+            maxiter=max_iter, tol=tol,
         )
-
-        lambda_min = cp.real(eigvals_small[0])
-        lambda_min = cp.maximum(lambda_min, 0)
-        sigma_min = float(cp.sqrt(lambda_min))
+        sigma_min = float(cp.abs(s_small[0]))
 
         cond = float("inf") if sigma_min == 0.0 else float(sigma_max / sigma_min)
 

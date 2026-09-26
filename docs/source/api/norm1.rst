@@ -14,18 +14,23 @@ Available functions
 When to choose each method
 --------------------------
 
-* ``hager-higham``: default high-accuracy production choice.
-* ``block-higham``: block variant for stronger robustness on some matrices.
-* ``power``: fast rough estimate.
-* ``oettli-prager``: adaptive/random/hybrid sampling style strategies.
+* ``hager-higham``: default inverse-norm estimation baseline.
+* ``block-hager`` / ``higham``: block variant.
+* ``power``: power iteration estimate.
+* ``oettli-prager``: adaptive/random/hybrid sampling.
 * ``monte-carlo``: stochastic baseline.
+
+See :doc:`../methods` and :doc:`../performance` for backend behavior and limits.
 
 Example
 -------
 
 .. code-block:: python
 
+   import numpy as np
    from sparse_kappa import cond_estimate
+
+   A = np.diag([1., 2., 10.])
 
    result = cond_estimate(
        A,

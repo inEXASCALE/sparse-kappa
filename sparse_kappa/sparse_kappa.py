@@ -6,6 +6,7 @@ from sparse_kappa.backend import torch_api as cp
 from sparse_kappa.backend import sparse as sp
 from typing import Union, Dict, Any
 import warnings
+import math
 
 from .norm1.hager_higham import hager_higham_norm1, block_higham_tisseur_norm1
 from .norm1.power_iteration import power_iteration_norm1
@@ -67,7 +68,7 @@ class ConditionNumberEstimator:
         self.norm = norm
         self.method = method
         self.kwargs = kwargs
-        self.properties = get_matrix_properties(A)
+        self.properties = get_matrix_properties(self.A)
         
         if self.norm not in [1, 2]:
             raise ValueError(f"Unsupported norm: {norm}. Use 1 or 2.")
@@ -254,6 +255,10 @@ def cond_estimate(
     >>>     result = cond_estimate(A, norm=1, method=method, verbose=True)
     >>>     print(f"{method}: {result['condition_number']:.4e}")
     """
+    if not isinstance(max_iter, int) or isinstance(max_iter, bool) or max_iter < 1:
+        raise ValueError("max_iter must be a positive integer")
+    if not math.isfinite(tol) or tol < 0:
+        raise ValueError("tol must be finite and nonnegative")
     kwargs.update({'max_iter': max_iter, 'tol': tol, 'verbose': verbose})
     
     estimator = ConditionNumberEstimator(A, norm=norm, method=method, **kwargs)

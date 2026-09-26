@@ -6,9 +6,9 @@ Development setup
 
 .. code-block:: bash
 
-   git clone https://github.com/chenxinye/sparse-kappa.git
+   git clone https://github.com/inEXASCALE/sparse-kappa.git
    cd sparse-kappa
-   pip install -e ".[dev]"
+   python -m pip install -e ".[dev,docs]"
 
 Testing
 -------
@@ -26,6 +26,6 @@ Build docs locally:
 
 .. code-block:: bash
 
-   cd docs
-   pip install -r requirements.txt
-   make html
+   python -m sphinx -W --keep-going -b html docs/source /tmp/sparse-kappa-docs
+
+Read :doc:`architecture` for module contracts and the complete validation workflow.

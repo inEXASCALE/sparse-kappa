@@ -1,221 +1,91 @@
-Quick Start Guide
-=================
+Quick start: estimate a condition number
+========================================
 
-This guide will get you started with Sparse Kappa in 5 minutes.
+No training dataset or GPU is needed for numerical estimation. Each code block
+below is independently runnable after ``python -m pip install sparse-kappa``
+(or ``python -m pip install -e .`` for this checkout).
 
-Basic Usage
------------
+Diagonal matrix: a known answer
+-------------------------------
 
-Estimate Condition Number
-~~~~~~~~~~~~~~~~~~~~~~~~~~
+For a nonsingular diagonal matrix, both condition numbers equal the largest
+absolute diagonal entry divided by the smallest: here the answer is **10**.
 
 .. code-block:: python
 
-   from sparse_kappa.backend import sparse as sp
+   import numpy as np
    from sparse_kappa import cond_estimate
-   
-   # Create sparse matrix on GPU
-   A = sp.random(1000, 1000, density=0.01, format='csr')
-   
-   # Estimate condition number (automatic method)
-   cond = cond_estimate(A)
-   print(f"κ(A) = {cond:.4e}")
 
-Choose Specific Method
-~~~~~~~~~~~~~~~~~~~~~~
+   A = np.diag([1.0, 2.0, 4.0, 10.0])
+   print(cond_estimate(A, norm=2))
+   print(cond_estimate(A, norm=1, method="hager-higham", solver="lu"))
+   print("Reference:", np.linalg.cond(A, p=2))
 
-.. code-block:: python
+A discretized 1D Poisson operator
+---------------------------------
 
-   # 1-norm with Hager-Higham algorithm
-   cond_1 = cond_estimate(A, norm=1, method='hager-higham')
-   
-   # 2-norm with SVDS
-   cond_2 = cond_estimate(A, norm=2, method='svds')
-   
-   print(f"κ₁(A) = {cond_1:.4e}")
-   print(f"κ₂(A) = {cond_2:.4e}")
-
-Get Detailed Results
-~~~~~~~~~~~~~~~~~~~~
+The tridiagonal matrix with diagonal 2 and off-diagonal -1 is symmetric positive
+definite. With eight interior points, its 2-norm condition number is about
+**32.1634**. This example constructs the whole problem; no external data is needed.
 
 .. code-block:: python
 
-   # Return full dictionary of results
-   result = cond_estimate(A, norm=2, method='svds', return_dict=True)
-   
-   print(f"Method: {result['method']}")
-   print(f"Condition number: {result['condition_number']:.4e}")
-   print(f"Iterations: {result['iterations']}")
-   print(f"σ_max: {result['sigma_max']:.4e}")
-   print(f"σ_min: {result['sigma_min']:.4e}")
-
-Use Fast LU Solver
-~~~~~~~~~~~~~~~~~~
-
-.. code-block:: python
-
-   # Fastest for 1-norm (10-20x speedup)
-   cond = cond_estimate(A, norm=1, method='hager-higham', solver='lu')
-
-Common Workflows
-----------------
-
-Check Matrix Conditioning
-~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: python
-
-   from sparse_kappa.backend import sparse as sp
+   import math
+   import torch
    from sparse_kappa import cond_estimate
-   
-   A = sp.random(2000, 2000, density=0.005, format='csr')
-   cond = cond_estimate(A)
-   
-   if cond < 100:
-       print("Matrix is well-conditioned ✓")
-   elif cond < 1000:
-       print("Matrix is moderately conditioned")
-   else:
-       print("Matrix is ill-conditioned ⚠")
+   from sparse_kappa.backend import sparse as sp
 
-Compare Methods
-~~~~~~~~~~~~~~~
+   n = 8
+   dense = 2 * torch.eye(n, dtype=torch.float64)
+   dense += torch.diag(-torch.ones(n - 1, dtype=torch.float64), diagonal=1)
+   dense += torch.diag(-torch.ones(n - 1, dtype=torch.float64), diagonal=-1)
+   A = sp.csr_matrix(dense)
+   result = cond_estimate(A, norm=2, method="svds", return_dict=True)
+   theta = math.pi / (n + 1)
+   reference = (1 + math.cos(theta)) / (1 - math.cos(theta))
+   print("Estimate:", result["condition_number"])
+   print("Analytic reference:", reference)
+   print("Method:", result["method"], "Converged:", result["converged"])
+   print("Singular values:", result["sigma_max"], result["sigma_min"])
 
-.. code-block:: python
+Nonsymmetric matrix and the class API
+-------------------------------------
 
-   methods_1norm = ['hager-higham', 'power', 'oettli-prager']
-   methods_2norm = ['svds', 'lanczos', 'golub-kahan']
-   
-   print("1-norm methods:")
-   for method in methods_1norm:
-       result = cond_estimate(A, norm=1, method=method, 
-                             solver='lu', return_dict=True)
-       print(f"  {method:15s}: κ={result['condition_number']:.4e}, "
-             f"iter={result['iterations']}")
-   
-   print("\n2-norm methods:")
-   for method in methods_2norm:
-       cond = cond_estimate(A, norm=2, method=method)
-       print(f"  {method:15s}: κ={cond:.4e}")
-
-Analyze Large Matrix
-~~~~~~~~~~~~~~~~~~~~
+A 1-norm estimate uses repeated solves, so the solver choice matters. LU is a
+useful baseline when its dense factorization fits in memory. The class API
+retains the matrix and method options; ``estimate()`` always returns diagnostics.
 
 .. code-block:: python
 
-   # Large sparse matrix
-   A = sp.random(50000, 50000, density=0.0001, format='csr')
-   
-   # Use Golub-Kahan for speed
-   import time
-   start = time.time()
-   cond = cond_estimate(A, norm=2, method='golub-kahan', 
-                       num_values=6, max_iter=30)
-   elapsed = time.time() - start
-   
-   print(f"Condition number: {cond:.4e}")
-   print(f"Time: {elapsed:.2f}s")
+   import numpy as np
+   from sparse_kappa import ConditionNumberEstimator, cond_estimate
 
-Method Selection Guide
-----------------------
+   A = np.array([[1., 2., 0.], [0., 3., 1.], [0., 0., 4.]])
+   estimator = ConditionNumberEstimator(A, norm=1, method="hager-higham", solver="lu")
+   result = estimator.estimate()
+   print("Estimated kappa_1:", result["condition_number"])
+   print("Reference kappa_1:", np.linalg.cond(A, p=1))
+   print("Estimated kappa_2:", cond_estimate(A, norm=2))
 
-When to Use Each Norm
-~~~~~~~~~~~~~~~~~~~~~
+Run the complete examples
+-------------------------
 
-**1-norm** (``norm=1``):
+From the repository root, after installing this checkout:
 
-* When you need L₁ condition number
-* Faster than 2-norm for sparse matrices
-* Use with ``solver='lu'`` for best performance
+.. code-block:: bash
 
-**2-norm** (``norm=2``):
+   python examples/toy_models.py
+   python examples/api_workflows.py
+   python examples/gnn_edge_features.py --epochs 5
+   python examples/gnn_edge_features.py --epochs 5 --no-edge-features
+   python examples/gnn_edge_features.py --norm 1 --strategy 1 --epochs 5
 
-* Most common in numerical analysis
-* Natural for symmetric matrices
-* Better stability analysis
+Read :doc:`examples` for all toy matrices and reference values, :doc:`api/main`
+for the numerical API, and :doc:`api/gnn` for learned prediction.
 
-When to Use Each Method
-~~~~~~~~~~~~~~~~~~~~~~~
+.. note::
 
-**1-norm methods**:
-
-.. code-block:: python
-
-   # Hager-Higham: Industry standard, accurate
-   cond_estimate(A, norm=1, method='hager-higham', solver='lu')
-   
-   # Power: Fast rough estimate
-   cond_estimate(A, norm=1, method='power', solver='lu')
-   
-   # Oettli-Prager: Multiple sampling strategies
-   cond_estimate(A, norm=1, method='oettli-prager', solver='lu', 
-                variant='adaptive')
-
-**2-norm methods**:
-
-.. code-block:: python
-
-   # SVDS: Most accurate (small-medium matrices)
-   cond_estimate(A, norm=2, method='svds', num_values=10)
-   
-   # Lanczos: Good for symmetric
-   cond_estimate(A, norm=2, method='lanczos', num_values=6)
-   
-   # Golub-Kahan: Fast for large matrices
-   cond_estimate(A, norm=2, method='golub-kahan', num_values=6)
-
-Solver Selection (1-norm only)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. code-block:: python
-
-   # LU: Fastest (recommended)
-   cond_estimate(A, norm=1, method='hager-higham', solver='lu')
-   
-   # LSMR: For very large matrices
-   cond_estimate(A, norm=1, method='hager-higham', solver='lsmr',
-                solver_kwargs={'atol': 1e-3, 'maxiter': 20})
-   
-   # CG: For symmetric positive definite
-   A_spd = A @ A.T + sp.eye(A.shape[0]) * 10
-   cond_estimate(A_spd, norm=1, method='hager-higham', solver='cg')
-
-Performance Tips
-----------------
-
-1. **Use LU solver for 1-norm**
-
-   .. code-block:: python
-   
-      # 10-20x faster
-      cond_estimate(A, norm=1, method='hager-higham', solver='lu')
-
-2. **Reduce iterations for quick estimates**
-
-   .. code-block:: python
-   
-      cond_estimate(A, norm=2, method='lanczos', max_iter=10, num_values=3)
-
-3. **Use auto-selection**
-
-   .. code-block:: python
-   
-      # Library picks best method
-      cond_estimate(A, method='auto')
-
-4. **Warm up GPU first**
-
-   .. code-block:: python
-   
-      # First call compiles kernels
-      _ = cond_estimate(A, norm=2, method='svds')
-      # Subsequent calls are fast
-      cond = cond_estimate(A, norm=2, method='svds')
-
-Next Steps
-----------
-
-* :doc:`user_guide` - Comprehensive documentation
-* :doc:`api/main` - Full API reference
-* :doc:`examples` - More examples
-* :doc:`performance` - Performance optimization
+   The current numerical backend stores matrices densely, even when the input
+   uses CSR/COO. Start with modest matrix sizes and read :doc:`performance`
+   before scaling up. Iterative estimator names do not imply sparse storage
+   or sparse iterative solves in this backend.

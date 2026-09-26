@@ -26,8 +26,16 @@ class SparseMatrixGNN(nn.Module):
         hidden_dim: int = 64,
         num_layers: int = 3,
         dropout: float = 0.0,
+        use_edge_features: bool = True,
     ):
         super().__init__()
+        if hidden_dim < 2 or num_layers < 1:
+            raise ValueError("hidden_dim must be >= 2 and num_layers must be >= 1")
+        if not 0 <= dropout < 1:
+            raise ValueError("dropout must be in [0, 1)")
+        if not isinstance(use_edge_features, bool):
+            raise ValueError("use_edge_features must be a bool")
+        self.use_edge_features = use_edge_features
         self.node_feature_dim = node_feature_dim
         self.edge_feature_dim = edge_feature_dim
         self.global_feature_dim = global_feature_dim
@@ -83,7 +91,11 @@ class SparseMatrixGNN(nn.Module):
         global_features = graph.global_features
 
         h = self.node_encoder(x)
-        e = self.edge_encoder(edge_attr)
+        e = (
+            self.edge_encoder(edge_attr)
+            if self.use_edge_features
+            else h.new_zeros((edge_index.shape[1], self.hidden_dim))
+        )
         src = edge_index[0]
         dst = edge_index[1]
 
@@ -93,7 +105,9 @@ class SparseMatrixGNN(nn.Module):
             agg = torch.zeros_like(h)
             agg.index_add_(0, dst, messages)
             degree = torch.zeros(h.shape[0], 1, dtype=h.dtype, device=h.device)
-            degree.index_add_(0, dst, torch.ones(messages.shape[0], 1, dtype=h.dtype, device=h.device))
+            degree.index_add_(
+                0, dst, torch.ones(messages.shape[0], 1, dtype=h.dtype, device=h.device)
+            )
             agg = agg / degree.clamp_min(1.0)
             h = h + update_layer(torch.cat([h, agg], dim=1))
 
@@ -110,4 +124,5 @@ class SparseMatrixGNN(nn.Module):
             "hidden_dim": self.hidden_dim,
             "num_layers": self.num_layers,
             "dropout": self.dropout,
+            "use_edge_features": self.use_edge_features,
         }

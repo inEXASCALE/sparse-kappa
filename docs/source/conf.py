@@ -1,12 +1,12 @@
 import os
 import sys
 
-sys.path.insert(0, os.path.abspath('../..'))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 project = 'sparse-kappa'
 author = 'Erin Carson, Xinye Chen'
 copyright = '2026, Erin Carson, Xinye Chen'
-release = '0.0.2'
+release = '0.0.4'
 
 extensions = [
     'sphinx.ext.mathjax',
@@ -14,14 +14,14 @@ extensions = [
     'myst_parser',
 ]
 
-templates_path = ['_templates']
+templates_path = []
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
 html_theme = 'furo'
 html_title = 'sparse-kappa documentation'
-html_static_path = ['_static']
+html_static_path = []
 html_theme_options = {
-    'source_repository': 'https://github.com/chenxinye/sparse-kappa/',
+    'source_repository': 'https://github.com/inEXASCALE/sparse-kappa/',
     'source_branch': 'master',
     'source_directory': 'docs/source/',
     'navigation_with_keys': True,

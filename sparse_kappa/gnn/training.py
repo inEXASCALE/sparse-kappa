@@ -3,15 +3,31 @@
 from __future__ import annotations
 
 import math
+import os
+import tempfile
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 import torch
 from torch import nn
 
 from sparse_kappa.gnn.data import MatrixConditionDataset, MatrixGraph
-from sparse_kappa.gnn.features import DefaultGraphFeatureExtractor, matrix_to_dense_tensor
+from sparse_kappa.gnn.features import (
+    DefaultGraphFeatureExtractor,
+    matrix_to_dense_tensor,
+)
 from sparse_kappa.gnn.models import SparseMatrixGNN
 
 
@@ -55,6 +71,7 @@ class TrainingConfig:
     scheduler_patience: int = 10
     scheduler_factor: float = 0.5
     early_stopping_patience: Optional[int] = None
+    use_edge_features: bool = True
 
     def __post_init__(self) -> None:
         if self.strategy is not None:
@@ -62,6 +79,32 @@ class TrainingConfig:
             self.target = strategy_target(self.strategy)
         if self.target not in {"condition", "inverse_norm"}:
             raise ValueError("target must be 'condition' or 'inverse_norm'")
+        if self.norm not in (1, 2):
+            raise ValueError("norm must be 1 or 2")
+        if not isinstance(self.use_edge_features, bool):
+            raise ValueError("use_edge_features must be a bool")
+        if (
+            not isinstance(self.epochs, int)
+            or isinstance(self.epochs, bool)
+            or self.epochs < 1
+        ):
+            raise ValueError("epochs must be a positive integer")
+        for name in ("lr", "weight_decay", "scheduler_factor"):
+            value = getattr(self, name)
+            if not math.isfinite(value) or value < 0:
+                raise ValueError(f"{name} must be finite and nonnegative")
+        if self.lr == 0 or not 0 < self.scheduler_factor < 1:
+            raise ValueError(
+                "lr must be positive and scheduler_factor must be in (0, 1)"
+            )
+        for name in ("grad_clip", "early_stopping_patience"):
+            value = getattr(self, name)
+            if value is not None and (not math.isfinite(value) or value <= 0):
+                raise ValueError(f"{name} must be positive and finite")
+        if self.scheduler not in {"plateau", "cosine", "none"}:
+            raise ValueError("scheduler must be 'plateau', 'cosine', or 'none'")
+        if not isinstance(self.scheduler_patience, int) or self.scheduler_patience < 0:
+            raise ValueError("scheduler_patience must be a nonnegative integer")
         _normalized_log_base(self.log_base)
 
 
@@ -82,11 +125,14 @@ class GNNConditionEstimator:
         config: Optional[TrainingConfig] = None,
     ):
         self.config = config or TrainingConfig()
-        self.feature_extractor = feature_extractor or DefaultGraphFeatureExtractor()
+        self.feature_extractor = feature_extractor or DefaultGraphFeatureExtractor(
+            use_edge_features=self.config.use_edge_features
+        )
         self.model = model or SparseMatrixGNN(
             node_feature_dim=self.feature_extractor.node_feature_dim,
             edge_feature_dim=self.feature_extractor.edge_feature_dim,
             global_feature_dim=self.feature_extractor.global_feature_dim,
+            use_edge_features=self.config.use_edge_features,
         )
         self.history: Dict[str, List[float]] = {"train_loss": [], "val_loss": []}
 
@@ -103,18 +149,37 @@ class GNNConditionEstimator:
         optimizer_factory: Optional[OptimizerFactory] = None,
         scheduler_factory: Optional[SchedulerFactory] = None,
         loss_fn: Optional[LossFn] = None,
-        validator: Optional[Callable[["GNNConditionEstimator", Iterable[Any]], float]] = None,
+        validator: Optional[
+            Callable[["GNNConditionEstimator", Iterable[Any]], float]
+        ] = None,
         save_path: Optional[Union[str, Path]] = None,
     ) -> "GNNConditionEstimator":
         train_dataset = _ensure_dataset(train_data)
         val_dataset = None if val_data is None else _ensure_dataset(val_data)
+        if not len(train_dataset):
+            raise ValueError("training dataset must not be empty")
+        if val_dataset is not None and not len(val_dataset):
+            raise ValueError("validation dataset must not be empty")
+        # Validate all labels before any optimizer step mutates the model.
+        for dataset in (train_dataset, val_dataset):
+            if dataset is not None:
+                for sample in dataset:
+                    self._target_tensor(
+                        self._target_value_from_sample(sample, dataset), self.device
+                    )
         device = self.device
-        self.model.to(device)
+        self.model.to(
+            device=device, dtype=getattr(self.feature_extractor, "dtype", torch.float32)
+        )
 
         optimizer = (
             optimizer_factory(self.model.parameters())
             if optimizer_factory is not None
-            else torch.optim.AdamW(self.model.parameters(), lr=self.config.lr, weight_decay=self.config.weight_decay)
+            else torch.optim.AdamW(
+                self.model.parameters(),
+                lr=self.config.lr,
+                weight_decay=self.config.weight_decay,
+            )
         )
         scheduler = (
             scheduler_factory(optimizer)
@@ -138,9 +203,17 @@ class GNNConditionEstimator:
                 optimizer.zero_grad()
                 pred = self.model(graph)
                 loss = loss_fn(pred.reshape(()), target.reshape(()))
+                if not torch.isfinite(loss):
+                    raise FloatingPointError(
+                        "non-finite training loss; check data, features, and learning rate"
+                    )
                 loss.backward()
                 if self.config.grad_clip is not None:
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.grad_clip)
+                    torch.nn.utils.clip_grad_norm_(
+                        self.model.parameters(),
+                        self.config.grad_clip,
+                        error_if_nonfinite=True,
+                    )
                 optimizer.step()
                 losses.append(float(loss.detach().cpu()))
 
@@ -158,6 +231,8 @@ class GNNConditionEstimator:
             else:
                 metric = train_loss
 
+            if not math.isfinite(metric):
+                raise FloatingPointError("training/validation metric must be finite")
             if scheduler is not None:
                 if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
                     scheduler.step(metric)
@@ -166,7 +241,10 @@ class GNNConditionEstimator:
 
             if metric < best_val:
                 best_val = metric
-                best_state = {k: v.detach().cpu().clone() for k, v in self.model.state_dict().items()}
+                best_state = {
+                    k: v.detach().cpu().clone()
+                    for k, v in self.model.state_dict().items()
+                }
                 epochs_without_improvement = 0
                 if save_path is not None:
                     self.save(save_path)
@@ -191,9 +269,13 @@ class GNNConditionEstimator:
 
     def evaluate(self, data: Iterable[Any], loss_fn: Optional[LossFn] = None) -> float:
         dataset = _ensure_dataset(data)
+        if not len(dataset):
+            raise ValueError("evaluation dataset must not be empty")
         loss_fn = loss_fn or nn.MSELoss()
         device = self.device
-        self.model.to(device)
+        self.model.to(
+            device=device, dtype=getattr(self.feature_extractor, "dtype", torch.float32)
+        )
         self.model.eval()
         losses: List[float] = []
         with torch.no_grad():
@@ -202,8 +284,13 @@ class GNNConditionEstimator:
                 target_value = self._target_value_from_sample(sample, dataset)
                 target = self._target_tensor(target_value, device)
                 pred = self.model(graph)
-                losses.append(float(loss_fn(pred.reshape(()), target.reshape(())).cpu()))
-        return float(sum(losses) / max(len(losses), 1))
+                losses.append(
+                    float(loss_fn(pred.reshape(()), target.reshape(())).cpu())
+                )
+        metric = float(sum(losses) / len(losses))
+        if not math.isfinite(metric):
+            raise FloatingPointError("evaluation loss must be finite")
+        return metric
 
     def predict(
         self,
@@ -213,7 +300,9 @@ class GNNConditionEstimator:
         is_single = not isinstance(matrices, (list, tuple))
         matrix_list = [matrices] if is_single else list(matrices)
         device = self.device
-        self.model.to(device)
+        self.model.to(
+            device=device, dtype=getattr(self.feature_extractor, "dtype", torch.float32)
+        )
         self.model.eval()
 
         outputs: List[Dict[str, float]] = []
@@ -222,7 +311,14 @@ class GNNConditionEstimator:
                 graph = self.feature_extractor(matrix).to(device)
                 pred_log = self.model(graph).reshape(())
                 raw = self._inverse_target_transform(pred_log)
+                if self.config.target == "condition" and not return_dict:
+                    outputs.append({"condition_number": raw})
+                    continue
                 norm_A = matrix_norm(matrix, self.config.norm)
+                if not math.isfinite(norm_A) or norm_A <= 0:
+                    raise ValueError(
+                        "matrix norm must be positive and finite for condition components"
+                    )
                 if self.config.target == "inverse_norm":
                     inverse_norm = raw
                     condition = norm_A * inverse_norm
@@ -231,6 +327,8 @@ class GNNConditionEstimator:
                     inverse_norm = raw / norm_A if norm_A > 0 else float("inf")
                     condition = raw
                     predicted_quantity = "condition_number"
+                if not math.isfinite(condition) or not math.isfinite(inverse_norm):
+                    raise FloatingPointError("GNN condition components overflowed")
                 outputs.append(
                     {
                         "condition_number": float(condition),
@@ -253,11 +351,31 @@ class GNNConditionEstimator:
         payload = {
             "model_state": self.model.state_dict(),
             "model_class": self.model.__class__.__name__,
-            "model_config": self.model.config() if hasattr(self.model, "config") else None,
+            "model_config": (
+                self.model.config() if hasattr(self.model, "config") else None
+            ),
             "training_config": asdict(self.config),
             "history": self.history,
+            "feature_extractor_config": (
+                self.feature_extractor.config()
+                if type(self.feature_extractor) is DefaultGraphFeatureExtractor
+                else None
+            ),
+            "custom_feature_extractor": type(self.feature_extractor)
+            is not DefaultGraphFeatureExtractor,
+            "checkpoint_version": 1,
         }
-        torch.save(payload, path)
+        # Replace only after a complete write, preserving an existing checkpoint
+        # if serialization fails or the process is interrupted.
+        with tempfile.NamedTemporaryFile(
+            dir=path.parent, suffix=".pt", delete=False
+        ) as file:
+            temporary = Path(file.name)
+        try:
+            torch.save(payload, temporary)
+            os.replace(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     @classmethod
     def load(
@@ -267,13 +385,29 @@ class GNNConditionEstimator:
         feature_extractor: Optional[DefaultGraphFeatureExtractor] = None,
         model: Optional[nn.Module] = None,
     ) -> "GNNConditionEstimator":
-        payload = torch.load(path, map_location=map_location or "cpu")
+        payload = torch.load(
+            path, map_location=map_location or "cpu", weights_only=True
+        )
+        if payload.get("checkpoint_version", 1) != 1:
+            raise ValueError("unsupported GNN checkpoint version")
         config = TrainingConfig(**payload["training_config"])
-        feature_extractor = feature_extractor or DefaultGraphFeatureExtractor()
+        if feature_extractor is None:
+            if payload.get("custom_feature_extractor"):
+                raise ValueError(
+                    "pass the custom feature_extractor used to save this checkpoint"
+                )
+            options = dict(payload.get("feature_extractor_config") or {})
+            if "dtype" in options:
+                options["dtype"] = getattr(torch, options["dtype"])
+            options.setdefault("use_edge_features", config.use_edge_features)
+            feature_extractor = DefaultGraphFeatureExtractor(**options)
         if model is None:
+            if payload.get("model_class", "SparseMatrixGNN") != "SparseMatrixGNN":
+                raise ValueError("pass the custom model used to save this checkpoint")
             model_config = payload.get("model_config") or {}
             model = SparseMatrixGNN(**model_config)
         estimator = cls(model=model, feature_extractor=feature_extractor, config=config)
+        estimator.model.to(dtype=getattr(feature_extractor, "dtype", torch.float32))
         estimator.model.load_state_dict(payload["model_state"])
         estimator.history = payload.get("history", {"train_loss": [], "val_loss": []})
         return estimator
@@ -289,10 +423,14 @@ class GNNConditionEstimator:
                 patience=self.config.scheduler_patience,
             )
         if self.config.scheduler == "cosine":
-            return torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(self.config.epochs, 1))
+            return torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer, T_max=max(self.config.epochs, 1)
+            )
         raise ValueError("scheduler must be 'plateau', 'cosine', or 'none'")
 
-    def _graph_from_sample(self, sample: Mapping[str, Any], dataset: MatrixConditionDataset) -> MatrixGraph:
+    def _graph_from_sample(
+        self, sample: Mapping[str, Any], dataset: MatrixConditionDataset
+    ) -> MatrixGraph:
         target = None
         try:
             target = self._target_value_from_sample(sample, dataset)
@@ -304,7 +442,9 @@ class GNNConditionEstimator:
             metadata=sample.get(dataset.metadata_key),
         )
 
-    def _target_value_from_sample(self, sample: Mapping[str, Any], dataset: MatrixConditionDataset) -> float:
+    def _target_value_from_sample(
+        self, sample: Mapping[str, Any], dataset: MatrixConditionDataset
+    ) -> float:
         if self.config.target == "condition":
             return dataset.get_label(sample, "condition")
 
@@ -313,11 +453,15 @@ class GNNConditionEstimator:
         except KeyError:
             condition = dataset.get_label(sample, "condition")
             norm_A = self._norm_from_sample(sample, dataset)
-            if norm_A <= 0:
-                raise ValueError("matrix norm must be positive to derive inverse-norm targets")
+            if not math.isfinite(norm_A) or norm_A <= 0:
+                raise ValueError(
+                    "matrix norm must be positive to derive inverse-norm targets"
+                )
             return condition / norm_A
 
-    def _norm_from_sample(self, sample: Mapping[str, Any], dataset: MatrixConditionDataset) -> float:
+    def _norm_from_sample(
+        self, sample: Mapping[str, Any], dataset: MatrixConditionDataset
+    ) -> float:
         norm_suffix = str(self.config.norm).replace(".", "_")
         candidate_keys = (
             "norm_A",
@@ -332,9 +476,11 @@ class GNNConditionEstimator:
         return matrix_norm(sample[dataset.matrix_key], self.config.norm)
 
     def _target_tensor(self, value: float, device: torch.device) -> torch.Tensor:
-        tensor = torch.tensor(float(value), dtype=torch.float32, device=device)
+        value = float(value)
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError("training labels must be positive and finite")
+        tensor = torch.tensor(value, dtype=torch.float64, device=device)
         if self.config.log_targets:
-            tensor = tensor.clamp_min(1e-30)
             log_base = _normalized_log_base(self.config.log_base)
             if log_base is None:
                 tensor = torch.log(tensor)
@@ -342,16 +488,24 @@ class GNNConditionEstimator:
                 tensor = torch.log10(tensor)
             else:
                 tensor = torch.log(tensor) / math.log(log_base)
+        tensor = tensor.to(
+            dtype=getattr(self.feature_extractor, "dtype", torch.float32)
+        )
+        if not torch.isfinite(tensor):
+            raise ValueError("training label is not representable in the target dtype")
         return tensor
 
     def _inverse_target_transform(self, value: torch.Tensor) -> float:
+        value = value.to(dtype=torch.float64)
         if self.config.log_targets:
             log_base = _normalized_log_base(self.config.log_base)
-            if log_base is None:
-                return float(torch.exp(value).detach().cpu())
-            base = torch.tensor(log_base, dtype=value.dtype, device=value.device)
-            return float(torch.pow(base, value).detach().cpu())
-        return float(value.detach().cpu())
+            raw = torch.exp(value) if log_base is None else torch.pow(log_base, value)
+        else:
+            raw = value
+        result = float(raw.detach().cpu())
+        if not math.isfinite(result) or result <= 0:
+            raise FloatingPointError("GNN prediction must be positive and finite")
+        return result
 
 
 def train_gnn_condition_estimator(
@@ -367,7 +521,9 @@ def train_gnn_condition_estimator(
     validator: Optional[Callable[[GNNConditionEstimator, Iterable[Any]], float]] = None,
 ) -> GNNConditionEstimator:
     """Train a GNN condition estimator and optionally save the model."""
-    estimator = GNNConditionEstimator(model=model, feature_extractor=feature_extractor, config=config)
+    estimator = GNNConditionEstimator(
+        model=model, feature_extractor=feature_extractor, config=config
+    )
     return estimator.fit(
         train_data,
         val_data=val_data,
@@ -439,7 +595,14 @@ def normalize_strategy(strategy: StrategyName) -> int:
         key = strategy.strip().lower().replace("_", "-")
         if key in {"1", "strategy1", "strategy-1", "inverse", "inverse-norm", "hybrid"}:
             return STRATEGY_INVERSE_NORM
-        if key in {"2", "strategy2", "strategy-2", "condition", "direct", "direct-condition"}:
+        if key in {
+            "2",
+            "strategy2",
+            "strategy-2",
+            "condition",
+            "direct",
+            "direct-condition",
+        }:
             return STRATEGY_DIRECT_CONDITION
     elif strategy in STRATEGY_TARGETS:
         return int(strategy)
@@ -474,6 +637,6 @@ def _normalized_log_base(log_base: LogBase) -> Optional[float]:
             return None
         log_base = float(key)
     value = float(log_base)
-    if value <= 0 or value == 1.0:
+    if not math.isfinite(value) or value <= 0 or value == 1.0:
         raise ValueError("log_base must be 'e' or a positive number other than 1")
     return value

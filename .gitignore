@@ -2,3 +2,11 @@
 sparse_kappa.egg-info/
 __pycache__/
 *.py[cod]
+
+.venv/
+build/
+dist/
+.coverage
+coverage.xml
+htmlcov/
+.DS_Store

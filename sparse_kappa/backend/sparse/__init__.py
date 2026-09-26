@@ -117,7 +117,7 @@ def _dense_from_any(arg: Any, dtype: Any = None) -> torch.Tensor:
     if isinstance(arg, TorchSparseMatrix):
         dense = arg.toarray()
     elif isinstance(arg, torch.Tensor):
-        dense = arg.to_dense() if arg.is_sparse else arg
+        dense = arg.to_dense() if arg.layout != torch.strided else arg
     elif hasattr(arg, "toarray"):
         dense = cp.asarray(arg.toarray(), dtype=dtype)
     else:

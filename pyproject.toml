@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=45", "wheel"]
+requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,6 +8,7 @@ version = "0.0.4"
 description = "PyTorch-accelerated sparse matrix condition number estimation"
 readme = "README.md"
 authors = [
+    {name = "Erin Carson", email = "carson@karlin.mff.cuni.cz"},
     {name = "Xinye Chen", email = "xinyechenai@gmail.com"}
 ]
 license = {text = "MIT"}
@@ -26,7 +27,6 @@ classifiers = [
 dependencies = [
     "numpy>=1.20.0",
     "torch>=2.0.0",
-    "myst-parser>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -35,7 +35,17 @@ dev = [
     "pytest-cov>=2.0",
     "black>=22.0",
     "flake8>=4.0",
+    "scipy>=1.7",
+    "build>=0.10",
 ]
 
+docs = ["sphinx>=7.0", "furo>=2024.8.6", "myst-parser>=2.0"]
+
 [project.urls]
-Homepage = "https://github.com/chenxinye/sparse-kappa"
+Homepage = "https://github.com/inEXASCALE/sparse-kappa"
+Documentation = "https://sparse-kappa.readthedocs.io/en/latest/"
+Repository = "https://github.com/inEXASCALE/sparse-kappa"
+Issues = "https://github.com/inEXASCALE/sparse-kappa/issues"
+
+[tool.setuptools.packages.find]
+include = ["sparse_kappa", "sparse_kappa.*"]

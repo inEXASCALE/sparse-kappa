@@ -2,265 +2,149 @@
 
 # sparse-kappa
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](https://opensource.org/licenses/MIT)
-[![!pypi](https://img.shields.io/pypi/v/sparse-kappa?color=tomato)](https://pypi.org/project/sparse-kappa/)
-[![Coverage](https://github.com/inEXASCALE/sparse-kappa/actions/workflows/test.yml/badge.svg)](https://github.com/inEXASCALE/sparse-kappa/actions/workflows/test.yml)
-[![Documentation Status](https://readthedocs.org/projects/sparse-kappa/badge/?version=latest)](https://sparse-kappa.readthedocs.io/en/latest/)
-[![Downloads](https://static.pepy.tech/badge/sparse-kappa)](https://pepy.tech/project/sparse-kappa)
+[![PyPI](https://img.shields.io/pypi/v/sparse-kappa?style=flat&color=2563eb)](https://pypi.org/project/sparse-kappa/)
+[![Python](https://img.shields.io/badge/Python-%E2%89%A53.8-3776AB?logo=python&logoColor=white)](https://pypi.org/project/sparse-kappa/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-%E2%89%A52.0-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![Tests](https://github.com/inEXASCALE/sparse-kappa/actions/workflows/test.yml/badge.svg)](https://github.com/inEXASCALE/sparse-kappa/actions/workflows/test.yml)
+[![Documentation](https://readthedocs.org/projects/sparse-kappa/badge/?version=latest)](https://sparse-kappa.readthedocs.io/en/latest/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-0f766e)](LICENSE)
 
 **Condition Number Estimation on CPUs/GPUs for Sparse Matrices**
 
-
-
 </div>
 
-Calculating the matrix condition number gives a bound on how inaccurate the solution x to the (perturbed) linear system Ax = b will be after approximation, which plays an important role in mixed-precision computing. sparse-kappa is a CPU/GPU-accelerated library for estimating condition numbers of sparse matrices using PyTorch. It supports a variety of estimation methods associated with linear solvers. sparse-kappa is designed for benchmarking condition number estimators and practical use in the science and engineering community.
-
-
+sparse-kappa estimates matrix condition numbers with numerical algorithms and optional graph neural networks using PyTorch. Condition numbers describe normwise sensitivity of linear systems to perturbations, supporting numerical analysis and mixed-precision experiments.
 
 ## Features
 
-- **GPU-Accelerated**: All computations run on NVIDIA GPUs via PyTorch
-- **Multiple Norms**: Support for 1-norm and 2-norm condition numbers
-- **Rich Algorithm Suite**:
-  - **1-norm**: Hager-Higham, Power iteration, Oettli-Prager sampling, Block Hager
-  - **2-norm**: Power method, Lanczos, Golub-Kahan bidiagonalization
-  - **PyTorch integrations**: SVDS, EIGSH, LOBPCG wrappers
-- **Flexible Solver System**: LU, LSMR, CG, GMRES, Direct, Auto-selection
-- **GNN Prediction Module**: Train reusable models that predict condition numbers directly or via inverse-norm prediction
-- **Smart LU Caching**: Reuses factorizations for multiple solves (10-20x speedup)
-- **Memory Efficient**: Designed for large sparse matrices
+- **CPU and CUDA execution** through PyTorch; a GPU is optional.
+- **1-norm and 2-norm estimates** with Hager/Higham, power, Lanczos, and Golub–Kahan methods.
+- **Function and class APIs** with method-specific diagnostics and flexible inverse actions.
+- **Reusable GNN models** for direct condition-number or inverse-norm prediction.
+- **Optional matrix-element edge features** through `use_edge_features=True/False`.
+- **Validated inputs and atomic model checkpoints**, with regression coverage for both edge modes.
 
+The current numerical backend uses **dense storage internally**, including for CSR/COO inputs; several solver wrappers perform dense solves. It is not yet a memory-scalable sparse backend. Start with the small examples below and read [implementation limits](docs/source/performance.rst) before scaling up.
 
 ## Installation
 
+Install from PyPI:
 
-Simply via pip manager
 ```bash
-pip install sparse-kappa
+python -m pip install sparse-kappa
 ```
 
 ```bash
 git clone https://github.com/inEXASCALE/sparse-kappa.git
-pip install torch
-pip install -e .
+cd sparse-kappa
+python -m pip install -e .
 ```
 
 ## Quick Start
 
+This complete example has a known answer: both norms of `diag(1, 2, 4, 10)` have condition number **10**. Numerical estimation does not require GNN training.
+
 ```python
-from sparse_kappa.backend import sparse as sp
+import numpy as np
 from sparse_kappa import cond_estimate
 
-# Create sparse matrix
-A = sp.random(10000, 10000, density=0.01, format='csr')
-
-# Estimate condition number
-cond = cond_estimate(A)
-print(f"κ(A) = {cond:.2e}")
-
-# Use specific method with LU solver
-cond = cond_estimate(A, norm=1, method='hager-higham', solver='lu')
+A = np.diag([1.0, 2.0, 4.0, 10.0])
+print("κ₂(A):", cond_estimate(A, norm=2))
+result = cond_estimate(A, norm=1, method="hager-higham", solver="lu", return_dict=True)
+print("κ₁(A):", result["condition_number"])
+print("Reference:", np.linalg.cond(A, p=2))
 ```
 
-# Available Methods
+See the [quick start](docs/source/quickstart.rst) for complete Poisson and nonsymmetric matrix examples, and the [tutorials](docs/source/examples.rst) for reference comparisons and learned prediction.
 
-## 1-Norm Methods
+## Available Methods
 
-| Method          | Description                              | Best For                        | Complexity     |
-|-----------------|------------------------------------------|---------------------------------|----------------|
-| `hager`         | Hager algorithm (default)                | High accuracy, general matrices | O(k·nnz)       |
-| `power`         | Power iteration                          | Fast rough estimates            | O(k·nnz)       |
-| `oettli-prager` | Random/adaptive sampling                 | Quick estimates with variants   | O(m·nnz)       |
-| `hager-higham`   | Hager-Higham  (Block algorith, multiple vectors)           | Improved robustness             | O(k·b·nnz)     |
+### 1-norm methods
 
-**Recommended:** Use `solver='lu'` for all 1-norm methods (10-20x faster)
+| Method | Role |
+|---|---|
+| `hager-higham` / `auto` | Default inverse-norm estimate |
+| `hager` | Hager iteration |
+| `block-hager` / `higham` | Block Higham–Tisseur estimate |
+| `power` | Power iteration |
+| `oettli-prager` | Adaptive, random, or hybrid sampling |
+| `monte-carlo` | Random inverse-action sampling |
 
-## 2-Norm Methods
+Inverse actions accept `solver='auto'`, `'lu'`, `'direct'`, `'lsmr'`, `'cg'`, `'bicgstab'`, or `'gmres'`. LU caches its factorization within an estimation call. Current iterative solver wrappers use dense solves; see the [performance guide](docs/source/performance.rst).
 
-| Method            | Description                                                | Best For                                | Complexity      |
-|-------------------|------------------------------------------------------------|-----------------------------------------|-----------------|
-| `svds`            | Partial SVD (most accurate)                                | Small-medium matrices (<5k)             | O(k·nnz)        |
-| `eigsh`           | Symmetric eigenvalue solver                                | Symmetric / Hermitian matrices          | O(k·nnz)        |
-| `lobpcg`          | Block preconditioned CG                                    | Large matrices                          | O(k·nnz)        |
-| `power`           | Power iteration                                            | Quick estimates                         | O(k·nnz)        |
-| `lanczos`         | Lanczos tridiagonalization                                 | Medium symmetric matrices               | O(k²·nnz)       |
-| `lanczos_unsym`   | Lanczos-style condition estimation via `eigsh` on `A^H A`  | Non-symmetric / rectangular matrices    | O(k·nnz)        |
-| `golub-kahan`     | Bidiagonalization                                          | Numerically stable                      | O(k·nnz)        |
-| `auto`            | Automatic selection                                        | All cases                               | -               |
+### 2-norm methods
 
-## Solver Options
+| Method | Role |
+|---|---|
+| `svds` | Estimate extremal singular values directly |
+| `power` | Power/inverse iteration |
+| `lanczos` | Lanczos-based estimate |
+| `lanczos_unsym` | Estimate using the normal operator |
+| `golub-kahan` | Bidiagonalization estimate |
+| `eigsh`, `lobpcg` | Eigenvalue-based interfaces |
+| `auto` | Select using matrix size and structural heuristics |
 
-All 1-norm methods support flexible solver selection:
-
-| Solver | Description | Best For | Speed | Memory |
-|--------|-------------|----------|-------|--------|
-| `auto` | Automatic selection (default) | General use | Good | Low |
-| `lu` | LU factorization with caching | Small matrices (<5k), multiple solves | **Fastest** | High |
-| `lsmr` | LSMR iterative solver | Large matrices, single solve | Medium | Low |
-| `cg` | Conjugate Gradient | SPD matrices | Fast | Low |
-| `bicgstab` | BiCGSTAB (stabilized BiCG) | **Non-symmetric matrices** | **Fast** | Low |
-| `gmres` | GMRES | Non-symmetric, when BiCGSTAB fails | Medium | Low |
-| `direct` | Direct solver (no caching) | Single solve, small matrices | Fast | Medium |
-
-**Legend:**  
-`k` = iterations, `b` = block size, `m` = samples, `nnz` = non-zeros
+Method assumptions and implementation details are documented in the [user guide](docs/source/user_guide.rst). `return_dict=True` provides diagnostics; a convergence flag does not certify accuracy.
 
 ## GNN-Based Prediction
 
-The `sparse_kappa.gnn` module learns a mapping from sparse matrices to
-condition-number related scalars. It supports two explicit strategy workflows
-for both 1-norm and 2-norm condition numbers:
+Choose `strategy=1` to learn `||A⁻¹||` and multiply by `||A||`, or `strategy=2` to learn the condition number directly. Strategy helpers use base-10 log targets. Supply positive, finite labels for the chosen norm and validate on held-out matrices.
 
-- `strategy=1`: train on `log10(||A^{-1}||)` and compute `kappa(A) = ||A|| * ||A^{-1}||` at prediction time.
-- `strategy=2`: train on `log10(kappa(A))` and predict the condition number directly.
-
-The lower-level target API is still available: `target="condition"` predicts
-`kappa(A)` directly, while `target="inverse_norm"` predicts `||A^{-1}||` and
-multiplies by `||A||` at inference time.
-
-The default graph builder turns a sparse matrix into a row/column bipartite
-graph. You can replace the feature extractor, model, optimizer, scheduler,
-loss function, and validation callback.
-
-```python
-from sparse_kappa import make_gnn_strategy_config, train_gnn_strategy_estimator
-from sparse_kappa.gnn import GNNConditionEstimator
-from sparse_kappa.backend import sparse as sp
-
-train_samples = [
-    {"matrix": A0, "condition_number": 12.3, "norm_A": 4.1},
-    {"matrix": A1, "condition_number": 18.9, "norm_A": 5.7},
-]
-
-# Strategy 1: inverse-norm prediction. If norm_A is not supplied, sparse-kappa
-# computes ||A|| for the configured norm and derives ||A^{-1}|| = kappa(A) / ||A||.
-config = make_gnn_strategy_config(norm=1, strategy=1, epochs=100, lr=1e-3)
-estimator = train_gnn_strategy_estimator(
-    train_samples,
-    norm=1,
-    strategy=1,
-    val_data=None,
-    config=config,
-    save_path="models/gnn_strategy1_norm1.pt",
-)
-
-# Load and predict one matrix or a list of matrices.
-estimator = GNNConditionEstimator.load("models/gnn_strategy1_norm1.pt")
-result = estimator.predict(sp.random(100, 100, density=0.02, format="csr"), return_dict=True)
-print(result["condition_number"], result["norm_A"], result["norm_Ainv"])
-
-# Strategy 2: direct condition-number prediction.
-direct_config = make_gnn_strategy_config(norm=2, strategy=2, epochs=100)
-direct_estimator = train_gnn_strategy_estimator(train_samples, norm=2, strategy=2, config=direct_config)
-pred = direct_estimator.predict(A_test)
-```
-
-Customization hooks follow the same shape:
+The default bipartite graph already encodes matrix elements. Set **`use_edge_features=False`** for unweighted message passing, or **`True`** (the compatible default) to use numeric edge attributes. Node/global statistics retain matrix values in both modes. The mode is saved and restored with checkpoints.
 
 ```python
 import torch
+from sparse_kappa import make_gnn_strategy_config, train_gnn_strategy_estimator
 
-estimator.fit(
-    train_samples,
-    val_data=val_samples,
-    optimizer_factory=lambda params: torch.optim.Adam(params, lr=5e-4),
-    scheduler_factory=lambda opt: torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=50),
-    loss_fn=torch.nn.SmoothL1Loss(),
-    validator=my_validation_callback,
+torch.manual_seed(7)
+train_samples = [
+    {"matrix": torch.diag(torch.tensor([1., 2., k], dtype=torch.float64)),
+     "condition_number": k, "norm_A": k}
+    for k in (2., 4., 8., 16.)
+]
+config = make_gnn_strategy_config(
+    norm=2, strategy=2, epochs=5, device="cpu", scheduler="none",
+    use_edge_features=True,  # False disables edge attributes in message passing.
 )
+estimator = train_gnn_strategy_estimator(train_samples, norm=2, strategy=2, config=config)
+A_test = torch.diag(torch.tensor([1., 2., 6.], dtype=torch.float64))
+print("Predicted κ₂:", estimator.predict(A_test))
+print("Reference κ₂:", float(torch.linalg.cond(A_test)))
 ```
+
+This tiny training set demonstrates usage; it does not establish predictive accuracy. The [GNN reference](docs/source/api/gnn.rst) explains features, targets, customization, validation, checkpoint compatibility, and remaining limits.
 
 ## Examples
 
-### Example 1: Compare Methods
+After installing the checkout, run these complete tutorials from the repository root:
 
-```python
-from sparse_kappa.backend import sparse as sp
-from sparse_kappa import cond_estimate
-
-A = sp.random(2000, 2000, density=0.005, format='csr')
-
-# Compare 1-norm methods
-methods_1 = ['hager-higham', 'power', 'oettli-prager', 'block-hager']
-for method in methods_1:
-    result = cond_estimate(A, norm=1, method=method, solver='lu', 
-                          return_dict=True)
-    print(f"{method:15s}: κ={result['condition_number']:.4e}, "
-          f"iters={result['iterations']}")
-
-# Compare 2-norm methods
-methods_2 = ['svds', 'lanczos', 'golub-kahan']
-for method in methods_2:
-    cond = cond_estimate(A, norm=2, method=method)
-    print(f"{method:12s}: κ={cond:.4e}")
+```bash
+python examples/toy_models.py
+python examples/api_workflows.py
+python examples/gnn_edge_features.py --epochs 5
+python examples/gnn_edge_features.py --epochs 5 --no-edge-features
+python examples/gnn_edge_features.py --norm 1 --strategy 1 --epochs 5
 ```
 
-### Example 2: LU Solver (for 1-norm)
+- **Toy models:** identity, diagonal, 1D Poisson, nonsymmetric triangular, ill-conditioned, and singular matrices, with numerical references.
+- **API workflows:** NumPy/PyTorch/SciPy inputs, native COO/CSR, class API, diagnostics, and method comparison.
+- **GNN workflow:** labeled data, separate validation/test matrices, optional edge features, both strategies, batch prediction, and save/load consistency.
 
-```python
-# Highly recommended: use LU solver for Hager-Higham
-result = cond_estimate(A, norm=1, method='hager-higham',
-                      solver='lu', return_dict=True)
-
-print(f"Condition number: {result['condition_number']:.4e}")
-print(f"Solver info:")
-print(f"  Type: {result['solver_info']['solver_A']['method']}")
-print(f"  Factorized: {result['solver_info']['solver_A']['factorized']}")
-print(f"  Solves: {result['solver_info']['solver_A']['solve_count']}")
-```
-
-### Example 3: Oettli-Prager Variants
-
-```python
-# Adaptive (most accurate)
-result = cond_estimate(A, norm=1, method='oettli-prager',
-                      solver='lu', variant='adaptive', max_iter=15)
-
-# Random sampling (fastest)
-result = cond_estimate(A, norm=1, method='oettli-prager',
-                      solver='lu', variant='random', max_iter=20)
-
-# Hybrid (balanced)
-result = cond_estimate(A, norm=1, method='oettli-prager',
-                      solver='lu', variant='hybrid', max_iter=15)
-```
-
-### Example 4: Custom Solver Parameters
-```python
-# LSMR with relaxed tolerance for large matrices
-result = cond_estimate(A, norm=1, method='hager-higham',
-                      solver='lsmr',
-                      solver_kwargs={'atol': 1e-3, 'maxiter': 20})
-
-# CG for symmetric matrices
-A_spd = A @ A.T + sp.eye(A.shape[0]) * 10
-result = cond_estimate(A_spd, norm=1, method='hager-higham',
-                      solver='cg',
-                      solver_kwargs={'atol': 1e-3, 'maxiter': 30})
-```
-
-## Performance Tips
-
-1. **Auto mode is recommended** for first-time usage
-2. **For symmetric matrices**, use `eigsh` or `lanczos`
-3. **For large sparse matrices** (>10k), use `golub-kahan` or `lobpcg`
-4. **For highest accuracy on small matrices**, use `svds`
-5. **Increase `max_iter`** if convergence fails
+The [documentation](https://sparse-kappa.readthedocs.io/en/latest/) and [local documentation sources](docs/source/index.rst) cover these examples in detail. Local source changes appear on the hosted documentation only after publication.
 
 ## Testing
 
 ```bash
+python -m pip install -e ".[dev,docs]"
 # Run all tests
-pytest tests/ -v
+python -m pytest tests/ -v
 
 # Run specific test file
-pytest tests/test_norm2.py -v
+python -m pytest tests/test_norm2.py -v
 
 # Run with coverage
-pytest tests/ --cov=sparse_kappa
+python -m pytest tests/ --cov=sparse_kappa
 ```
-
 
 ## License
 
@@ -268,7 +152,11 @@ MIT License
 
 ## Contributing
 
-Contributions welcome! Please submit issues and pull requests on GitHub.
+See [architecture and reliability](docs/source/architecture.rst) and the [contributing guide](docs/source/contributing.rst) for module responsibilities and the validation workflow.
+
+```bash
+python -m sphinx -W --keep-going -b html docs/source /tmp/sparse-kappa-docs
+```
 
 ## References
 

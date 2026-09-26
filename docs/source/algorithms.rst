@@ -1,6 +1,14 @@
 Algorithm Reference
 ===================
 
+.. note::
+
+   This page describes the mathematical algorithms. The current PyTorch
+   compatibility backend stores matrices densely and uses dense solver and
+   decomposition wrappers. Algorithmic sparse complexity statements below are
+   not runtime guarantees for this implementation. See :doc:`performance`.
+
+
 This document provides mathematical details of the algorithms implemented in Sparse Kappa.
 
 1-Norm Algorithms
@@ -51,7 +59,7 @@ Hager-Higham Algorithm
 - LSMR: Each solve is :math:`O(m \cdot \text{nnz}(A))`
 
 Power Iteration (1-norm)
-~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~
 
 **Problem**: Estimate :math:`\|A^{-1}\|_1`
 
@@ -107,7 +115,7 @@ Oettli-Prager Method
 -----------------
 
 Singular Value Decomposition (SVDS)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 **Problem**: Compute :math:`\kappa_2(A) = \sigma_{\max}(A) / \sigma_{\min}(A)`
 
@@ -177,7 +185,7 @@ Lanczos Method
 **For symmetric** :math:`A`: Apply Lanczos directly to :math:`A`
 
 Golub-Kahan Bidiagonalization
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 **Reference**: Golub & Kahan (1965), SIAM J. Numer. Anal.
 
